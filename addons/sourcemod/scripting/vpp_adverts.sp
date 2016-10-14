@@ -25,7 +25,11 @@
 					- Updated advert serve url to VPP host.
 			1.1.6 - 
 					- Wait until player is dead before showing advert unless its in phasetime.
-									
+			1.1.7 - 
+					- Added initial TF2 support, Please report any bugs which you may find.
+					- Adverts on Join will now play instantly (after team / class join) without waiting for client death.
+					- General code / logic improvement.
+					
 *****************************************************************************************************
 
 *****************************************************************************************************
@@ -37,7 +41,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.1.6"
+#define PL_VERSION "1.1.7"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 
 /****************************************************************************************************
@@ -70,6 +74,8 @@ Handle g_hCvarPhaseAds = null;
 Handle g_hCvarGracePeriod = null;
 Handle g_hCvarKickMotd = null;
 
+EngineVersion g_eVersion = Engine_Unknown;
+
 /****************************************************************************************************
 	STRINGS.
 *****************************************************************************************************/
@@ -79,13 +85,15 @@ char g_szAdvertUrl[512];
 	BOOLS.
 *****************************************************************************************************/
 bool g_bImmune[MAXPLAYERS + 1] = false;
+bool g_bFirstJoin[MAXPLAYERS+1] = false;
+bool g_bClientTeamSelected[MAXPLAYERS + 1] = false;
+bool g_bAttemptingAdvert[MAXPLAYERS + 1] = false;
 bool g_bJoinGame = false;
 bool g_bProtoBuf = false;
-bool g_bClientJoined[MAXPLAYERS + 1] = false;
-bool g_bClientTeamSelected[MAXPLAYERS + 1] = false;
 bool g_bPhaseAds = false;
 bool g_bKickMotd = false;
 bool g_bPhase = false;
+bool g_bTeamEvent = false;
 
 /****************************************************************************************************
 	INTS.
@@ -111,17 +119,13 @@ public void OnPluginStart()
 	
 	g_bProtoBuf = (GetFeatureStatus(FeatureType_Native, "GetUserMessageType") == FeatureStatus_Available && GetUserMessageType() == UM_Protobuf);
 	
-	EngineVersion eVersion = GetEngineVersion();
+	g_eVersion = GetEngineVersion();
 	
-	if (eVersion != Engine_CSGO) {
-		SetFailState("This plugin is only supported on CSGO currently");
+	if(g_eVersion != Engine_CSGO && g_eVersion != Engine_TF2) {
+		SetFailState("This plugin has only been tested in CSGO and TF2, Support for more games is planned.");
 	}
 	
-	if (g_bProtoBuf) {
-		AddCommandListener(Client_JoinGame, "joingame");
-	}
-	
-	AddCommandListener(Client_JoinTeam, "jointeam");
+	g_bTeamEvent = HookEventEx("player_team", Event_PlayerTeam, EventHookMode_Pre);
 	
 	AutoExecConfig_SetFile("plugin.vpp_adverts");
 	HookConVarChange(g_hAdvertUrl = AutoExecConfig_CreateConVar("sm_vpp_url", "", "Put your VPP Advert Link here"), OnCvarChanged);
@@ -129,13 +133,13 @@ public void OnPluginStart()
 	HookConVarChange(g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many periodic adverts should be played in total? 0 = Unlimited. -1 = Disabled."), OnCvarChanged);
 	HookConVarChange(g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "15", "How often the periodic adverts should be played (In Minutes)"), OnCvarChanged);
 	HookConVarChange(g_hCvarImmunity = AutoExecConfig_CreateConVar("sm_vpp_immunity", "0", "Makes specific flag immune to adverts. 0 - off, abcdef - admin flags"), OnCvarChanged);
-	HookConVarChange(g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Show adverts during game phases (HalfTime, OverTime, MapEnd etc)"), OnCvarChanged);
+	HookConVarChange(g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Show adverts during game phases (CSGO only currently) (HalfTime, OverTime, MapEnd etc)"), OnCvarChanged);
 	HookConVarChange(g_hCvarGracePeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_grace", "180", "Don't show adverts to client if one has already played in the last x seconds, Min value = 180, Abusing this value may result in termination."), OnCvarChanged);
 	HookConVarChange(g_hCvarKickMotd = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Kick players with motd disabled? (Immunity flag is ignored)"), OnCvarChanged);
 	
-	HookEvent("player_connect_full", Event_PlayerActivated, EventHookMode_Post);
-	HookEvent("announce_phase_end", Event_PhaseEnd, EventHookMode_Pre);
-	HookEvent("round_start", Event_RoundStart, EventHookMode_Post);
+	HookEventEx("player_activate", Event_PlayerActivated, EventHookMode_Post);
+	HookEventEx("announce_phase_end", Event_PhaseEnd, EventHookMode_Pre);
+	HookEventEx("round_start", Event_RoundStart, EventHookMode_Post);
 	
 	UpdateConVars();
 	AutoExecConfig_CleanFile(); AutoExecConfig_ExecuteFile();
@@ -197,12 +201,12 @@ public void OnCvarChanged(Handle hConVar, const char[] szOldValue, const char[] 
 	}
 }
 
-public Action Event_PlayerActivated(Handle hEvent, const char[] szEvent, bool bDontBroadcast)
+public void Event_PlayerActivated(Handle hEvent, const char[] szEvent, bool bDontBroadcast)
 {
 	int iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
 	
 	if (!IsValidClient(iClient)) {
-		return Plugin_Continue;
+		return;
 	}
 	
 	CreateTimer(g_fAdvertPeriod * 60.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
@@ -211,7 +215,7 @@ public Action Event_PlayerActivated(Handle hEvent, const char[] szEvent, bool bD
 		CreateTimer(0.0, Timer_JoinAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	}
 	
-	return Plugin_Continue;
+	g_bFirstJoin[iClient] = true;
 }
 
 public void OnMapEnd() {
@@ -222,38 +226,34 @@ public void OnMapStart() {
 	g_bPhase = false;
 }
 
-public Action Event_RoundStart(Handle hEvent, char[] chEvent, bool bDontBroadcast) {
+public void Event_RoundStart(Handle hEvent, char[] chEvent, bool bDontBroadcast) {
 	g_bPhase = false;
 }
 
-public Action Event_PhaseEnd(Handle hEvent, char[] chEvent, bool bDontBroadcast)
+public void Event_PhaseEnd(Handle hEvent, char[] chEvent, bool bDontBroadcast)
 {
 	g_bPhase = true;
 	
 	if (!g_bPhaseAds) {
-		return Plugin_Continue;
+		return;
 	}
 	
 	LoopValidClients(iClient) {
 		CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
-	return Plugin_Continue;
+	return;
 }
 
-public Action Client_JoinTeam(int iClient, const char[] szCommand, int iArgs)
+public void Event_PlayerTeam(Handle hEvent, const char[] szName, bool bDontBroadcast)
 {
-	char szTeam[5]; GetCmdArgString(szTeam, sizeof(szTeam));
+	int iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
 	
-	int iSelectedTeam = StringToInt(szTeam);
+	int iTeam = GetEventInt(hEvent, "team");
 	
-	if (iSelectedTeam > 0) {
+	if(iTeam > 0) {
 		g_bClientTeamSelected[iClient] = true;
 	}
-}
-
-public Action Client_JoinGame(int iClient, char[] szCommand, int iArg) {
-	g_bClientJoined[iClient] = true;
 }
 
 public Action Timer_JoinAdvert(Handle hTimer, int iUserId)
@@ -264,13 +264,14 @@ public Action Timer_JoinAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if (!g_bClientJoined[iClient]) {
-		ClearMotd(iClient);
+	if (!g_bClientTeamSelected[iClient] && g_bTeamEvent) {
 		return Plugin_Continue;
 	}
 	
-	if (!g_bClientTeamSelected[iClient]) {
-		return Plugin_Continue;
+	if(HasEntProp(iClient, Prop_Send, "m_iClass")) {
+		if (GetEntProp(iClient, Prop_Send, "m_iClass") <= 0) {
+			return Plugin_Continue;
+		}
 	}
 	
 	QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdCheck, iUserId);
@@ -286,7 +287,7 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if (g_iAdvertTotal <= -1) {
+	if (g_iAdvertTotal <= -1 || g_bAttemptingAdvert[iClient]) {
 		return Plugin_Continue;
 	}
 	
@@ -318,7 +319,7 @@ public void Query_MotdCheck(QueryCookie qCookie, int iClient, ConVarQueryResult 
 	
 	if (cqResult != ConVarQuery_Okay || StringToInt(szCvarValue) > 0) {
 		if(g_bKickMotd) {
-			KickClient(iClient, "You must set cl_disablehtmlmotd 0 to play here.");
+			KickClient(iClient, "You must set cl_disablehtmlmotd 0 to play here");
 		}
 		return;
 	}
@@ -332,6 +333,8 @@ public void Query_MotdCheck(QueryCookie qCookie, int iClient, ConVarQueryResult 
 	// ---------------------------- Don't mess with this code. ----------------------------
 	
 	CreateTimer(0.0, Timer_TryAdvert, iUserId, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+	
+	g_bAttemptingAdvert[iClient] = true;
 }
 
 public Action Timer_TryAdvert(Handle hTimer, int iUserId)
@@ -349,7 +352,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if(IsPlayerAlive(iClient) && !g_bPhase) {
+	if(IsPlayerAlive(iClient) && !g_bPhase && !g_bFirstJoin[iClient]) {
 		return Plugin_Continue;
 	}
 	
@@ -365,18 +368,88 @@ public void ShowAdvert(int iClient)
 		return;
 	}
 	
-	//char szAuthId[64]; GetClientAuthId(iClient, AuthId_SteamID64, szAuthId, sizeof(szAuthId), true);
-	char szAdvertUrl[512]; Format(szAdvertUrl, 512, "http://vppgamingnetwork.com/vppadserver.html?url=%s", g_szAdvertUrl);
+	KeyValues hKv = CreateKeyValues("data");
 	
-	Handle hKv = CreateKeyValues("data");
-	KvSetNum(hKv, "cmd", 5);
-	KvSetString(hKv, "msg", szAdvertUrl);
-	KvSetString(hKv, "title", "VPP Network Advertisement MOTD");
-	KvSetNum(hKv, "type", MOTDPANEL_TYPE_URL);
+	hKv.SetNum("cmd", 5);
+	hKv.SetString("title", "VPP Network Advertisement MOTD");
+	hKv.SetNum("type", MOTDPANEL_TYPE_URL);
 	
-	ShowVGUIPanel(iClient, "info", hKv, true);
+	ShowVGUIPanelEx(iClient, "info", hKv, true, USERMSG_BLOCKHOOKS | USERMSG_RELIABLE);
+	
+	g_bFirstJoin[iClient] = false;
+	g_bAttemptingAdvert[iClient] = false;
+	
 	g_iAdvertPlays[iClient]++;
+}
+
+stock void ShowVGUIPanelEx(int iClient, const char[] szName, KeyValues hKv = null, bool bShow = true, int iFlags = 0)
+{
+	if (hKv == null || !hKv.GotoFirstSubKey(false)) {
+		CloseHandle(hKv);
+		return;
+	}
 	
+	TrimString(g_szAdvertUrl); StripQuotes(g_szAdvertUrl);
+	
+	hKv.Rewind();
+	
+	char szAdvertUrl[sizeof(g_szAdvertUrl)];
+	
+	if (g_eVersion == Engine_CSGO) {
+		Format(szAdvertUrl, sizeof(szAdvertUrl), "http://vppgamingnetwork.com/vppadserver.html?url=%s", g_szAdvertUrl); // CSGO is a nightmare..
+	} else {
+		strcopy(szAdvertUrl, sizeof(szAdvertUrl), g_szAdvertUrl);
+	}
+	
+	hKv.SetString("msg", szAdvertUrl);
+	hKv.GotoFirstSubKey(false);
+	
+	Handle hMsg = StartMessageOne("VGUIMenu", iClient, iFlags);
+	
+	if (g_bProtoBuf) {
+		PbSetString(hMsg, "name", szName);
+		PbSetBool(hMsg, "show", true);
+		
+		Handle hSubKey;
+		
+		do {
+			char szKey[128]; char szValue[128];
+			hKv.GetSectionName(szKey, sizeof(szKey));
+			hKv.GetString(NULL_STRING, szValue, sizeof(szValue), "");
+			
+			hSubKey = PbAddMessage(hMsg, "subkeys");
+			
+			PbSetString(hSubKey, "name", szKey);
+			PbSetString(hSubKey, "str", szValue);
+			
+		} while (hKv.GotoNextKey(false));
+		
+	} else {
+		BfWriteString(hMsg, szName);
+		BfWriteByte(hMsg, bShow);
+		
+		int iKeyCount = 0;
+		
+		do {
+			iKeyCount++;
+		} while (hKv.GotoNextKey(false));
+		
+		BfWriteByte(hMsg, iKeyCount);
+		
+		if (iKeyCount > 0) {
+			hKv.GoBack(); hKv.GotoFirstSubKey(false);
+			do {
+				char szKey[128]; char szValue[128];
+				hKv.GetSectionName(szKey, sizeof(szKey));
+				hKv.GetString(NULL_STRING, szValue, sizeof(szValue), "");
+				
+				BfWriteString(hMsg, szKey);
+				BfWriteString(hMsg, szValue);
+			} while (hKv.GotoNextKey(false));
+		}
+	}
+	
+	EndMessage();
 	CloseHandle(hKv);
 }
 
@@ -384,8 +457,9 @@ public void OnClientDisconnect(int iClient)
 {
 	g_iAdvertPlays[iClient] = 0;
 	g_iLastAdvertTime[iClient] = 0;
-	g_bClientJoined[iClient] = false;
 	g_bClientTeamSelected[iClient] = false;
+	g_bFirstJoin[iClient] = false;
+	g_bAttemptingAdvert[iClient] = false;
 }
 
 stock bool IsValidClient(int iClient)
@@ -407,6 +481,10 @@ stock bool IsValidClient(int iClient)
 
 stock void ClearMotd(int iClient)
 {
+	if(!g_bProtoBuf) {
+		return;
+	}
+	
 	Handle hPb = StartMessageOne("VGUIMenu", iClient);
 	Handle hSubkey;
 	
