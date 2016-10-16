@@ -29,6 +29,10 @@
 					- Added initial TF2 support, Please report any bugs which you may find.
 					- Adverts on Join will now play instantly (after team / class join) without waiting for client death.
 					- General code / logic improvement.
+			1.1.8 - 
+					- Fixed issues with adverts not playing to spectators on join.
+					- Fixed a rare but potential error that could of occured if the KV handle was invalid somehow.
+					- Slight code refactor / cleanup.
 					
 *****************************************************************************************************
 
@@ -41,7 +45,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.1.7"
+#define PL_VERSION "1.1.8"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 
 /****************************************************************************************************
@@ -86,14 +90,12 @@ char g_szAdvertUrl[512];
 *****************************************************************************************************/
 bool g_bImmune[MAXPLAYERS + 1] = false;
 bool g_bFirstJoin[MAXPLAYERS+1] = false;
-bool g_bClientTeamSelected[MAXPLAYERS + 1] = false;
 bool g_bAttemptingAdvert[MAXPLAYERS + 1] = false;
 bool g_bJoinGame = false;
 bool g_bProtoBuf = false;
 bool g_bPhaseAds = false;
 bool g_bKickMotd = false;
 bool g_bPhase = false;
-bool g_bTeamEvent = false;
 
 /****************************************************************************************************
 	INTS.
@@ -124,8 +126,6 @@ public void OnPluginStart()
 	if(g_eVersion != Engine_CSGO && g_eVersion != Engine_TF2) {
 		SetFailState("This plugin has only been tested in CSGO and TF2, Support for more games is planned.");
 	}
-	
-	g_bTeamEvent = HookEventEx("player_team", Event_PlayerTeam, EventHookMode_Pre);
 	
 	AutoExecConfig_SetFile("plugin.vpp_adverts");
 	HookConVarChange(g_hAdvertUrl = AutoExecConfig_CreateConVar("sm_vpp_url", "", "Put your VPP Advert Link here"), OnCvarChanged);
@@ -245,17 +245,6 @@ public void Event_PhaseEnd(Handle hEvent, char[] chEvent, bool bDontBroadcast)
 	return;
 }
 
-public void Event_PlayerTeam(Handle hEvent, const char[] szName, bool bDontBroadcast)
-{
-	int iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
-	
-	int iTeam = GetEventInt(hEvent, "team");
-	
-	if(iTeam > 0) {
-		g_bClientTeamSelected[iClient] = true;
-	}
-}
-
 public Action Timer_JoinAdvert(Handle hTimer, int iUserId)
 {
 	int iClient = GetClientOfUserId(iUserId);
@@ -264,13 +253,17 @@ public Action Timer_JoinAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if (!g_bClientTeamSelected[iClient] && g_bTeamEvent) {
-		return Plugin_Continue;
-	}
-	
-	if(HasEntProp(iClient, Prop_Send, "m_iClass")) {
-		if (GetEntProp(iClient, Prop_Send, "m_iClass") <= 0) {
+	if(HasEntProp(iClient, Prop_Send, "m_iTeamNum")) {
+		int iTeam = GetClientTeam(iClient);
+		
+		if (iTeam <= 0) {
 			return Plugin_Continue;
+		}
+		
+		if(HasEntProp(iClient, Prop_Send, "m_iClass")) {
+			if (GetEntProp(iClient, Prop_Send, "m_iClass") <= 0 && iTeam > 1) {
+				return Plugin_Continue;
+			}
 		}
 	}
 	
@@ -356,16 +349,9 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Continue;
 	}
 	
-	ShowAdvert(iClient);
-	
-	return Plugin_Stop;
-}
-
-public void ShowAdvert(int iClient)
-{
 	if (StrEqual(g_szAdvertUrl, "")) {
 		LogError("[VPP] Please specify a valid advert url.");
-		return;
+		return Plugin_Stop;
 	}
 	
 	KeyValues hKv = CreateKeyValues("data");
@@ -374,17 +360,22 @@ public void ShowAdvert(int iClient)
 	hKv.SetString("title", "VPP Network Advertisement MOTD");
 	hKv.SetNum("type", MOTDPANEL_TYPE_URL);
 	
-	ShowVGUIPanelEx(iClient, "info", hKv, true, USERMSG_BLOCKHOOKS | USERMSG_RELIABLE);
+	ShowAdvert(iClient, "info", hKv, USERMSG_BLOCKHOOKS | USERMSG_RELIABLE);
 	
 	g_bFirstJoin[iClient] = false;
 	g_bAttemptingAdvert[iClient] = false;
 	
-	g_iAdvertPlays[iClient]++;
+	return Plugin_Stop;
 }
 
-stock void ShowVGUIPanelEx(int iClient, const char[] szName, KeyValues hKv = null, bool bShow = true, int iFlags = 0)
+stock void ShowAdvert(int iClient, const char[] szName, KeyValues hKv, int iFlags = 0)
 {
-	if (hKv == null || !hKv.GotoFirstSubKey(false)) {
+	if (hKv == null) {
+		CloseHandle(hKv);
+		return;
+	}
+	
+	if(!hKv.GotoFirstSubKey(false)) {
 		CloseHandle(hKv);
 		return;
 	}
@@ -426,7 +417,7 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szName, KeyValues hKv = nul
 		
 	} else {
 		BfWriteString(hMsg, szName);
-		BfWriteByte(hMsg, bShow);
+		BfWriteByte(hMsg, true);
 		
 		int iKeyCount = 0;
 		
@@ -449,6 +440,8 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szName, KeyValues hKv = nul
 		}
 	}
 	
+	g_iAdvertPlays[iClient]++;
+	
 	EndMessage();
 	CloseHandle(hKv);
 }
@@ -457,7 +450,6 @@ public void OnClientDisconnect(int iClient)
 {
 	g_iAdvertPlays[iClient] = 0;
 	g_iLastAdvertTime[iClient] = 0;
-	g_bClientTeamSelected[iClient] = false;
 	g_bFirstJoin[iClient] = false;
 	g_bAttemptingAdvert[iClient] = false;
 }
@@ -477,37 +469,6 @@ stock bool IsValidClient(int iClient)
 	}
 	
 	return true;
-}
-
-stock void ClearMotd(int iClient)
-{
-	if(!g_bProtoBuf) {
-		return;
-	}
-	
-	Handle hPb = StartMessageOne("VGUIMenu", iClient);
-	Handle hSubkey;
-	
-	PbSetString(hPb, "name", "info");
-	PbSetBool(hPb, "show", false);
-	
-	hSubkey = PbAddMessage(hPb, "subkeys");
-	PbSetString(hSubkey, "name", "title");
-	PbSetString(hSubkey, "str", "");
-	
-	hSubkey = PbAddMessage(hPb, "subkeys");
-	PbSetString(hSubkey, "name", "type");
-	PbSetString(hSubkey, "str", "0");
-	
-	hSubkey = PbAddMessage(hPb, "subkeys");
-	PbSetString(hSubkey, "name", "msg");
-	PbSetString(hSubkey, "str", "");
-	
-	hSubkey = PbAddMessage(hPb, "subkeys");
-	PbSetString(hSubkey, "name", "cmd");
-	PbSetString(hSubkey, "str", "1");
-	
-	EndMessage();
 }
 
 stock bool IsValidFlag(const char[] szText)
