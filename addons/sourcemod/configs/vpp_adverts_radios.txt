@@ -1,0 +1,18 @@
+// This file contains a list of Radio stations to support resumation after an advert is finished, 
+// You can add your own here and feel free to share them so they can be added for future updates.
+
+"Radio Stations"
+{
+	"Hive365" {
+		"url" "http://hive365.co.uk/plugin/player/"
+	}
+	"FragRadio" {
+		"url" "http://fragradio.com//resources/plugins/sourcemod/player.php"
+	}
+	"Dubbeh" {
+		"url" "https://radio.dubbeh.net/index.php"
+	}
+	"PonyVilleLive" {
+		"url" "http://ponyvillelive.com/index/tunein/id/"
+	}
+}

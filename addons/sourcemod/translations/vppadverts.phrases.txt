@@ -1,0 +1,26 @@
+﻿"Phrases"
+{
+	"Radio Message"
+	{
+		"en"			"An advert is currently in progress, the radio will start after it has finished."
+		"pl"			"Reklama jest obecnie aktywna, radio zostanie uruchomione po jej zakończeniu."
+	}
+
+	"Misc Message"
+	{
+		"en"			"An advert is currently in progress, please try again after the ad finishes."
+		"pl"			"Reklama jest obecnie aktywna, spróbuj ponownie po jej zakończeniu."
+	}
+
+	"Advert Finished"
+	{
+		"en"			"The advert has finished, thanks for your support!"
+		"pl" 			"Reklama się skończyła, dziękujemy za wsparcie"
+	}
+
+	"Kick Message"
+	{
+		"en"			"You must set cl_disablehtmlmotd 0 to play here"
+		"pl" 			"Musisz mieć ustawione cl_disablehtmlmotd 0 aby tutaj grać"
+	}
+}
