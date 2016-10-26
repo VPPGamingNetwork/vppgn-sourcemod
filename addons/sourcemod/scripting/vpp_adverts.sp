@@ -48,6 +48,10 @@
 					- Improved checks when trying to play advert, ads should play in more cases that don't disturb players.
 					- Set sm_vpp_kickmotd 0 by default again.
 					- Some Syntax modernization.
+			1.2.1 - 
+					- Added command sm_vppreload with Admin Cvar flag to reload radios from config file.
+					- Added some polish radio stations (Thanks xWangan - Also helped me with translations)
+					
 *****************************************************************************************************
 *****************************************************************************************************
 	INCLUDES
@@ -63,7 +67,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.0"
+#define PL_VERSION "1.2.1"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 
 /****************************************************************************************************
@@ -182,6 +186,8 @@ public void OnPluginStart()
 	g_hCvarKickMotd = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Kick players with motd disabled? (Immunity flag is ignored)");
 	g_hCvarKickMotd.AddChangeHook(OnCvarChanged);
 	
+	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
+	
 	// General events when an Ad can get triggered.
 	HookEventEx("announce_phase_end", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("cs_win_panel_match", Phase_Hooks, EventHookMode_Pre);
@@ -234,6 +240,17 @@ public void OnCvarChanged(Handle hConVar, const char[] szOldValue, const char[] 
 	} else if (hConVar == g_hCvarGracePeriod) {
 		g_iAdvertGracePeriod = StringToInt(szNewValue);
 	}
+}
+
+public Action Command_Reload(int iClient, int iArgs) 
+{
+	if(LoadRadioStationsFromFile()) {
+		PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Reload Success");
+	} else {
+		PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Reload Failed");
+	}
+	
+	return Plugin_Handled;
 }
 
 stock bool LoadRadioStationsFromFile()

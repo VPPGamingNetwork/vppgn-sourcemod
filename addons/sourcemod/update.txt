@@ -4,15 +4,12 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.0"
+			"Latest"	"1.2.1"
+			"Previous"	"1.2.0"
 		}
 		
-		"Notes"	"Added initial support for CSS, NMRIH, Please report any bugs which you may find. "
-		"Notes"	"Added support for Radio resumation."
-		"Notes"	"Added Multi-Lang support."
-		"Notes"	"Improved checks when trying to play advert, ads should play in more cases that don't disturb players."
-		"Notes"	"Set sm_vpp_kickmotd 0 by default again."
-		"Notes"	"Some Syntax modernization."
+		"Notes"	"Added command sm_vppreload with Admin Cvar flag to reload radios from config file."
+		"Notes"	"Added some polish radio stations (Thanks xWangan - Also helped me with translations)"
 	}
 	
 	"Files"
