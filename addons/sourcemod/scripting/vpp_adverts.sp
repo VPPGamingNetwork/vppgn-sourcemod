@@ -51,6 +51,15 @@
 			1.2.1 - 
 					- Added command sm_vppreload with Admin Cvar flag to reload radios from config file.
 					- Added some polish radio stations (Thanks xWangan - Also helped me with translations)
+			1.2.2 - 
+					- Added support for Day of defeat: Source, Fist full of Frags, Please report any bugs which you may find. 
+					- Added support for loading third party radio stations (https://forums.alliedmods.net/showthread.php?p=512035)
+					- Added vpp_adverts_radios_custom.txt from now on, please avoid editing vpp_adverts_radios.txt as this file may get overwritten when plugin updates happen.
+						- If you have any custom radio stations in vpp_adverts_radios.txt then please move them to vpp_adverts_radios_custom.txt, 
+						Also let us know and we can add them to vpp_adverts_radios.txt for next update.
+					- Added duplicate radio detection to prevent the same radio station getting added multiple times.
+					- Improved reload command, it will now say how many radio stations were actually loaded.
+					- Fixed an issue which would cause radio resume to wait until player died or fail in some special cases.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -58,6 +67,7 @@
 *****************************************************************************************************/
 #include <sdktools>
 #include <autoexecconfig>
+#include <multicolors>
 
 #undef REQUIRE_PLUGIN
 #include <updater>
@@ -67,8 +77,9 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.1"
+#define PL_VERSION "1.2.2"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
+#define PREFIX "[{lightgreen}Advert{default}] "
 
 /****************************************************************************************************
 	ETIQUETTE.
@@ -154,8 +165,11 @@ public void OnPluginStart()
 	
 	g_eVersion = GetEngineVersion();
 	
-	if (g_eVersion != Engine_CSGO && g_eVersion != Engine_TF2 && g_eVersion != Engine_CSS && g_eVersion != view_as<EngineVersion>(19)) {
-		LogMessage("This plugin has not been tested on this engine / game, things may not work correctly.");
+	if (
+		g_eVersion != Engine_CSGO && g_eVersion != Engine_TF2 && 
+		g_eVersion != Engine_CSS && g_eVersion != Engine_DODS && 
+		g_eVersion != view_as<EngineVersion>(19)) {
+		LogMessage("This plugin has not been tested on this engine / game (%d), things may not work correctly.", g_eVersion);
 	}
 	
 	//AddCommandListener(OnPageClosed, "closed_htmlpage"); Probably for later use?
@@ -196,27 +210,30 @@ public void OnPluginStart()
 	HookEventEx("teamplay_round_win", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("arena_win_panel", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("wave_complete", Phase_Hooks, EventHookMode_Pre);
+	HookEventEx("dod_game_over", Phase_Hooks, EventHookMode_Pre);
+	HookEventEx("dod_win_panel", Phase_Hooks, EventHookMode_Pre);
+	HookEventEx("game_end", Phase_Hooks, EventHookMode_Pre);
 	
 	// Misc events.
 	HookEventEx("round_start", Event_RoundStart, EventHookMode_Post);
 	HookEventEx("round_end", Event_RoundEnd, EventHookMode_Pre);
 	
-	UpdateConVars();
-	AutoExecConfig_CleanFile(); AutoExecConfig_ExecuteFile();
-	LoadRadioStationsFromFile();
-	
 	LoadTranslations("vppadverts.phrases.txt");
 	
+	UpdateConVars();
+	AutoExecConfig_CleanFile(); AutoExecConfig_ExecuteFile();
+	LoadRadioStations();
+	
 	if (LibraryExists("updater")) {
-        Updater_AddPlugin(UPDATE_URL);
-    }
+		Updater_AddPlugin(UPDATE_URL);
+	}
 }
 
 public void OnLibraryAdded(const char[] szName)
 {
-    if (StrEqual(szName, "updater")) {
-        Updater_AddPlugin(UPDATE_URL);
-    }
+	if (StrEqual(szName, "updater")) {
+		Updater_AddPlugin(UPDATE_URL);
+	}
 }
 
 public void OnCvarChanged(Handle hConVar, const char[] szOldValue, const char[] szNewValue)
@@ -242,38 +259,44 @@ public void OnCvarChanged(Handle hConVar, const char[] szOldValue, const char[] 
 	}
 }
 
-public Action Command_Reload(int iClient, int iArgs) 
+public Action Command_Reload(int iClient, int iArgs)
 {
-	if(LoadRadioStationsFromFile()) {
-		PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Reload Success");
-	} else {
-		PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Reload Failed");
-	}
+	CReplyToCommand(iClient, "%s%t", PREFIX, "Radios Loaded", LoadRadioStations());
 	
 	return Plugin_Handled;
 }
 
-stock bool LoadRadioStationsFromFile()
+stock int LoadRadioStations()
+{
+	if (g_alRadioStations != null) {  // If the array is already created, we can simply refresh it.
+		g_alRadioStations.Clear();
+	} else {
+		g_alRadioStations = new ArrayList(256);
+	}
+	
+	LoadThirdPartyRadioStations();
+	LoadPresetRadioStations();
+	
+	int iLoaded = g_alRadioStations.Length;
+	
+	LogMessage("%t", "Radios Loaded", iLoaded);
+	
+	return iLoaded;
+}
+
+stock void LoadPresetRadioStations()
 {
 	char szPath[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, szPath, sizeof(szPath), "configs/vpp_adverts_radios.txt");
 	
 	if (!FileExists(szPath)) {
-		LogError("%s is missing, Radio resumation support will be disabled.", szPath);
-		return false;
+		return;
 	}
 	
 	KeyValues hKv = new KeyValues("Radio Stations");
 	
 	if (!hKv.ImportFromFile(szPath)) {
-		LogError("Failed to import Radio stations from %s, Please make sure your config is not corrupt, Radio resumation support will be disabled.", szPath);
-		return false;
-	}
-	
-	if (g_alRadioStations != null) {  // If the array is already created, we can simply refresh it.
-		g_alRadioStations.Clear();
-	} else {
-		g_alRadioStations = new ArrayList(256);
+		return;
 	}
 	
 	hKv.GotoFirstSubKey();
@@ -281,12 +304,74 @@ stock bool LoadRadioStationsFromFile()
 	char szBuffer[255];
 	do {
 		hKv.GetString("url", szBuffer, sizeof(szBuffer));
+		
+		TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
+		
+		if (RadioEntryExists(szBuffer)) {
+			continue;
+		}
+		
 		g_alRadioStations.PushString(szBuffer);
+		
 	} while (hKv.GotoNextKey());
 	
 	delete hKv;
+}
+
+stock void LoadThirdPartyRadioStations()
+{
+	char szPath[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, szPath, sizeof(szPath), "configs/radiovolume.txt");
 	
-	return true;
+	if (FileExists(szPath)) {
+		KeyValues hKv = new KeyValues("Radio Stations");
+		
+		if (hKv.ImportFromFile(szPath)) {
+			hKv.GotoFirstSubKey();
+			
+			char szBuffer[255];
+			do {
+				hKv.GetString("Stream URL", szBuffer, sizeof(szBuffer));
+				
+				TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
+				
+				if (RadioEntryExists(szBuffer)) {
+					continue;
+				}
+				
+				g_alRadioStations.PushString(szBuffer);
+				
+			} while (hKv.GotoNextKey());
+			
+			delete hKv;
+		}
+	}
+	
+	BuildPath(Path_SM, szPath, sizeof(szPath), "configs/vpp_adverts_radios_custom.txt");
+	
+	if (FileExists(szPath)) {
+		KeyValues hKv = new KeyValues("Radio Stations");
+		
+		if (hKv.ImportFromFile(szPath)) {
+			hKv.GotoFirstSubKey();
+			
+			char szBuffer[255];
+			do {
+				hKv.GetString("url", szBuffer, sizeof(szBuffer));
+				
+				TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
+				
+				if (RadioEntryExists(szBuffer)) {
+					continue;
+				}
+				
+				g_alRadioStations.PushString(szBuffer);
+				
+			} while (hKv.GotoNextKey());
+			
+			delete hKv;
+		}
+	}
 }
 
 public void OnConfigsExecuted() {
@@ -359,7 +444,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	
 	char szTitle[1024];
 	char szUrl[1024];
-	bool bShow = false;
 	
 	if (g_bProtoBuf) {
 		Handle hSubKey = null;
@@ -375,9 +459,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 				PbReadString(hSubKey, "str", szTitle, sizeof(szTitle));
 			}
 			
-			if (StrEqual(szKey, "show")) {
-				bShow = PbReadBool(hSubKey, "str");
-			}
 			if (StrEqual(szKey, "msg")) {
 				PbReadString(hSubKey, "str", szUrl, sizeof(szUrl));
 			}
@@ -397,11 +478,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			
 			BfReadString(hMsg, szKey, sizeof(szKey));
 			BfReadString(hMsg, szKey, sizeof(szKey));
-			
-			if (StrEqual(szKey, "show")) {
-				bShow = view_as<bool>(BfReadByte(hMsg));
-			}
-			
 			BfReadString(hMsg, szKey, sizeof(szKey));
 			
 			if (StrEqual(szKey, "msg") || StrEqual(szKey, "#L4D_MOTD")) {
@@ -415,12 +491,12 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			ShowAdvert(iClient, USERMSG_BLOCKHOOKS | USERMSG_RELIABLE, hMsg); // We can simply override (ALL?) ProtoBuf messages.
 		} else {
 			switch (g_eVersion) {  // Various engines can require some special treatment for the ads to work correctly.
-				case Engine_Left4Dead, Engine_Left4Dead2, 19 :  { // 19 = NMRIH
+				case Engine_Left4Dead, Engine_Left4Dead2, 19: {  // 19 = NMRIH
 					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 					return Plugin_Handled;
 				}
 				
-				default: { // For the most part this "MAY" work in other games, but full support probably won't not be available.
+				default: {  // For the most part this "MAY" work in other games, but full support probably won't not be available.
 					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 				}
 			}
@@ -432,7 +508,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	bool bRadio = false;
 	char szBuffer[256];
 	
-	int iRadioStations = sizeof(g_alRadioStations);
+	int iRadioStations = g_alRadioStations.Length;
 	
 	for (int i = 0; i < iRadioStations; i++) {
 		g_alRadioStations.GetString(i, szBuffer, sizeof(szBuffer));
@@ -454,7 +530,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	} else if (g_bAdvertPlaying[iClient]) {
 		if (bRadio) {
 			DataPack dPack = CreateDataPack();
-			dPack.WriteString(szTitle); dPack.WriteCell(view_as<int>(bShow)); dPack.WriteString(szUrl);
+			dPack.WriteString(szTitle); dPack.WriteString(szUrl);
 			
 			if (g_dRadioPack[iClient] != null) {
 				delete g_dRadioPack[iClient];
@@ -486,7 +562,7 @@ public void PrintRadioMessage(int iUserId)
 		return;
 	}
 	
-	PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Radio Message");
+	CPrintToChat(iClient, "%s%t", PREFIX, "Radio Message");
 }
 
 public void PrintMiscMessage(int iUserId)
@@ -497,7 +573,7 @@ public void PrintMiscMessage(int iUserId)
 		return;
 	}
 	
-	PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Misc Message");
+	CPrintToChat(iClient, "%s%t", PREFIX, "Misc Message");
 }
 
 public void OnClientDisconnect(int iClient)
@@ -596,6 +672,10 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (g_eVersion == Engine_DODS && GetClientTeam(iClient) <= 0) {
+		return Plugin_Continue;
+	}
+	
 	if (IsPlayerAlive(iClient) && (!g_bPhase && !g_bFirstJoin[iClient] && !g_bRoundEnd && !CheckGameSpecificConditions())) {
 		return Plugin_Continue;
 	}
@@ -626,17 +706,15 @@ public Action Timer_AfterAdRequest(Handle hTimer, int iUserId)
 	g_dRadioPack[iClient].Reset();
 	
 	char szTitle[1024]; char szUrl[1024];
-	bool bShow = false;
 	
 	g_dRadioPack[iClient].ReadString(szTitle, sizeof(szTitle));
-	bShow = view_as<bool>(g_dRadioPack[iClient].ReadCell());
 	g_dRadioPack[iClient].ReadString(szUrl, sizeof(szUrl));
 	
-	if (g_bAttemptingAdvert[iClient] || (bShow && (IsPlayerAlive(iClient) && !g_bPhase && !g_bFirstJoin[iClient] && !g_bRoundEnd && !CheckGameSpecificConditions()))) {
+	if (g_bAttemptingAdvert[iClient]) {
 		return Plugin_Continue;
 	}
 	
-	ShowVGUIPanelEx(iClient, szTitle, szUrl, MOTDPANEL_TYPE_URL, 0, bShow);
+	ShowVGUIPanelEx(iClient, szTitle, szUrl, MOTDPANEL_TYPE_URL, 0, false);
 	g_hRadioTimer[iClient] = null;
 	
 	return Plugin_Stop;
@@ -656,7 +734,7 @@ stock void ShowAdvert(int iClient, int iFlags, Handle hMsg = null)
 	
 	TrimString(g_szAdvertUrl); StripQuotes(g_szAdvertUrl);
 	
-	if (g_bFirstJoin[iClient] && g_eVersion == Engine_CSS) {
+	if (g_bFirstJoin[iClient] && (g_eVersion == Engine_CSS || g_eVersion == Engine_DODS)) {
 		FakeClientCommandEx(iClient, "joingame"); // Fix the bug with team menu.
 	}
 	
@@ -769,7 +847,7 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	
 	g_bAdvertPlaying[iClient] = false;
 	
-	PrintToChat(iClient, "\x01[\x04Advert\x01] \x04%t", "Advert Finished");
+	CPrintToChat(iClient, "%s%t", PREFIX, "Advert Finished");
 	
 	return Plugin_Stop;
 }
@@ -805,7 +883,7 @@ stock bool IsValidClient(int iClient)
 
 stock bool CheckGameSpecificConditions()
 {
-	if(g_eVersion == Engine_CSGO) {
+	if (g_eVersion == Engine_CSGO) {
 		if (GameRules_GetProp("m_bWarmupPeriod") == 1 || GameRules_GetProp("m_bFreezePeriod") == 1) {
 			return true;
 		}
@@ -813,6 +891,29 @@ stock bool CheckGameSpecificConditions()
 	
 	return false;
 }
+
+stock bool RadioEntryExists(const char[] szEntry)
+{
+	int iRadioStations = g_alRadioStations.Length;
+	
+	if (iRadioStations <= 0) {
+		return false;
+	}
+	
+	char szBuffer[256];
+	
+	for (int i = 0; i < iRadioStations; i++) {
+		g_alRadioStations.GetString(i, szBuffer, sizeof(szBuffer));
+		
+		
+		if (StrEqual(szEntry, szBuffer, false)) {
+			return true;
+		}
+	}
+	
+	return false;
+}
+
 
 stock bool IsValidFlag(const char[] szText)
 {

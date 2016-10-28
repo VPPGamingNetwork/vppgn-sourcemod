@@ -4,12 +4,16 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.1"
-			"Previous"	"1.2.0"
+			"Latest"	"1.2.2"
+			"Previous"	"1.2.1"
 		}
 		
-		"Notes"	"Added command sm_vppreload with Admin Cvar flag to reload radios from config file."
-		"Notes"	"Added some polish radio stations (Thanks xWangan - Also helped me with translations)"
+		"Notes"	"Added support for Day of defeat: Source, Fist full of Frags, Please report any bugs which you may find."
+		"Notes"	"Added support for loading third party radio stations (https://forums.alliedmods.net/showthread.php?p=512035)"
+		"Notes"	"Added vpp_adverts_radios_custom.txt from now on, please avoid editing vpp_adverts_radios.txt as this file may get overwritten when plugin updates happen."
+		"Notes"	"Added duplicate radio detection to prevent the same radio station getting added multiple times."
+		"Notes"	"Improved reload command, it will now say how many radio stations were actually loaded."
+		"Notes"	"Fixed an issue which would cause radio resume to wait until player died or fail in some special cases."
 	}
 	
 	"Files"
@@ -17,6 +21,7 @@
 		"Plugin"	"Path_SM/plugins/vpp_adverts.smx"
 		"Plugin"	"Path_SM/translations/vppadverts.phrases.txt"
 		"Plugin"	"Path_SM/configs/vpp_adverts_radios.txt"
+		"Plugin"	"Path_SM/configs/vpp_adverts_radios_custom.txt"
 		
 		"Source"	"Path_SM/scripting/vpp_adverts.sp"
 		"Source"	"Path_SM/scripting/include/autoexecconfig.inc"

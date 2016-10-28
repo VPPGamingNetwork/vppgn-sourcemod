@@ -35,4 +35,12 @@
 		"en" "Reload failed, check error logs for more information."
 		"pl" "Nie udało się załadować, sprawdź logi, aby uzyskać więcej informacji."
 	}
+
+	"Radios Loaded"
+	{
+		"#format" "{1:d}"
+
+		"en" "{1} Radio stations loaded."
+		"pl" "{1} stacji radiowych zostało załadowane."
+	}
 } 
