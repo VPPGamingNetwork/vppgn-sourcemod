@@ -72,7 +72,11 @@
 					- Removed advert grace period cvar and set it to 3 mins, Adverts should not be playing more often than every 3 mins anyway as it will risk getting you banned for spamming ads.
 			1.2.4 - 
 					- Fixed timer error from caused by it being closed twice due to disconnect and team event happening at same time.
-					- Fixed Immunity flag not working, (Thanks sneaK for reporting the bug)
+					- Fixed Immunity not working, (Thanks sneaK for reporting the bug)
+						- Immunity now uses overrides, You can set this up by adding advertisement_immunity to admin_overrides.cfg, Root flag is always immune.
+					- Added old Cvar catcher (Thanks Pinion for the idea)
+					- Replaced Cvar sm_vpp_immunity with sm_vpp_immunity_enabled
+						- Set to 1 to prevent displaying ads to users with access to 'advertisement_immunity', Root flag is always immune.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -118,7 +122,7 @@ public Plugin myinfo =
 ConVar g_hAdvertUrl = null;
 ConVar g_hCvarJoinGame = null;
 ConVar g_hCvarAdvertPeriod = null;
-ConVar g_hCvarImmunity = null;
+ConVar g_hCvarImmunityEnabled = null;
 ConVar g_hCvarAdvertTotal = null;
 ConVar g_hCvarPhaseAds = null;
 ConVar g_hCvarKickMotd = null;
@@ -136,7 +140,6 @@ EngineVersion g_eVersion = Engine_Unknown;
 *****************************************************************************************************/
 char g_szAdvertUrl[256];
 char g_szGameName[256];
-char g_szImmunityFlag[32];
 
 char g_szTestedGames[][] =  {
 	"csgo", 
@@ -172,6 +175,7 @@ bool g_bRoundEnd = false;
 bool g_bMotdEnabled[MAXPLAYERS + 1] = false;
 bool g_bGameTested = false;
 bool g_bForceJoinGame = false;
+bool g_bImmunityEnabled = false;
 
 /****************************************************************************************************
 	INTS.
@@ -244,8 +248,8 @@ public void OnPluginStart()
 	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes) 0 = Disabled");
 	g_hCvarSpecAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarImmunity = AutoExecConfig_CreateConVar("sm_vpp_immunity", "0", "Makes specific flag immune to adverts. 0 - off, abcdef - admin flags");
-	g_hCvarImmunity.AddChangeHook(OnCvarChanged);
+	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Set to 1 to prevent displaying ads to users with access to 'advertisement_immunity', Root flag is always immune.");
+	g_hCvarImmunityEnabled.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Show adverts during game phases (HalfTime, OverTime, MapEnd, WinPanels etc)");
 	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
@@ -283,6 +287,33 @@ public void OnPluginStart()
 	if (LibraryExists("updater")) {
 		Updater_AddPlugin(UPDATE_URL);
 	}
+	
+	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
+	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
+}
+
+public Action OldCvarFound(int iArgs)
+{
+	if (iArgs != 1)
+		return Plugin_Stop;
+		
+	char szCvarName[64]; GetCmdArg(0, szCvarName, sizeof(szCvarName));
+	
+	LogError("\n\nHey, it looks like your config is outdated, Please consider having a look at the information below and update your config.\n");
+
+	if (StrEqual(szCvarName, "sm_vpp_immunity", false)) {
+		LogError("======================[sm_vpp_immunity]======================");
+		LogError("sm_vpp_immunity has changed to sm_vpp_immunity_enabled, and the overrides system is now being used.");
+		LogError("Users with access to 'advertisement_immunity' are now immune to ads when sm_vpp_immunity_enabled is set to 1.\n");
+	} else if (StrEqual(szCvarName, "sm_vpp_ad_grace", false)) {
+		LogError("======================[sm_vpp_ad_grace]======================");
+		LogError("sm_vpp_ad_grace no longer exists and the cvar is now unused.");
+		LogError("You can simply use the other cvars to control when how often ads are played, But a 3 min cooldown between each ad is always enforced.\n");
+	}
+	
+	LogError("After you have acknowledged the above messages and updated your config, you may completely remove the cvars to prevent this message displaying again.");
+	
+	return Plugin_Handled;
 }
 
 public void OnLibraryAdded(const char[] szName)
@@ -304,8 +335,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_fAdvertPeriod = StringToFloat(szNewValue);
 	} else if (hConVar == g_hCvarAdvertTotal) {
 		g_iAdvertTotal = StringToInt(szNewValue);
-	} else if (hConVar == g_hCvarImmunity) {
-		strcopy(g_szImmunityFlag, 1, szNewValue);
+	} else if (hConVar == g_hCvarImmunityEnabled) {
+		g_bImmunityEnabled = view_as<bool>(StringToInt(szNewValue));
 	}  else if (hConVar == g_hCvarKickMotd) {
 		g_bKickMotd = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarSpecAdvertPeriod) {
@@ -438,11 +469,10 @@ public void OnConfigsExecuted() {
 
 public void UpdateConVars()
 {
-	char szBuffer[256];
-	
 	g_bJoinGame = g_hCvarJoinGame.BoolValue;
 	g_bKickMotd = g_hCvarKickMotd.BoolValue;
 	g_bPhaseAds = g_hCvarPhaseAds.BoolValue;
+	g_bImmunityEnabled = g_hCvarImmunityEnabled.BoolValue;
 	
 	g_fAdvertPeriod = g_hCvarAdvertPeriod.FloatValue;
 	g_fSpecAdvertPeriod = g_hCvarSpecAdvertPeriod.FloatValue;
@@ -455,7 +485,6 @@ public void UpdateConVars()
 	g_iAdvertTotal = g_hCvarAdvertTotal.IntValue;
 	
 	g_hAdvertUrl.GetString(g_szAdvertUrl, sizeof(g_szAdvertUrl));
-	g_hCvarImmunity.GetString(szBuffer, sizeof(szBuffer)); strcopy(g_szImmunityFlag, 1, szBuffer);
 }
 
 public void OnClientPostAdminCheck(int iClient)
@@ -1020,14 +1049,11 @@ stock bool IsValidClient(int iClient)
 
 stock bool IsClientImmune(int iClient) 
 {
-	AdminId aId = GetUserAdmin(iClient);
-	
-	if (aId == INVALID_ADMIN_ID) {
+	if(!g_bImmunityEnabled) {
 		return false;
 	}
 	
-	int iFlag = ReadFlagString(g_szImmunityFlag);
-	return ((GetUserFlagBits(iClient) & iFlag) == iFlag);
+	return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_ROOT);
 }
 
 stock bool CheckGameSpecificConditions()
