@@ -70,7 +70,10 @@
 					- Fixed a couple of issues where Radio would not resume correctly & Fixed a rare case where adverts could resume for players who were not listening it.
 					- Remove adverts at round end / freezetime being a "Good" period, it apppers to have caused a couple of complaints that it was disturbing players.
 					- Removed advert grace period cvar and set it to 3 mins, Adverts should not be playing more often than every 3 mins anyway as it will risk getting you banned for spamming ads.
-
+			1.2.4 - 
+					- Fixed timer error from caused by it being closed twice due to disconnect and team event happening at same time.
+					- Fixed Immunity flag not working, (Thanks sneaK for reporting the bug)
+					
 *****************************************************************************************************
 *****************************************************************************************************
 	INCLUDES
@@ -87,7 +90,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.3"
+#define PL_VERSION "1.2.4"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -133,6 +136,7 @@ EngineVersion g_eVersion = Engine_Unknown;
 *****************************************************************************************************/
 char g_szAdvertUrl[256];
 char g_szGameName[256];
+char g_szImmunityFlag[32];
 
 char g_szTestedGames[][] =  {
 	"csgo", 
@@ -156,7 +160,6 @@ char g_szJoinGames[][] =  {
 /****************************************************************************************************
 	BOOLS.
 *****************************************************************************************************/
-bool g_bImmune[MAXPLAYERS + 1] = false;
 bool g_bFirstJoin[MAXPLAYERS + 1] = false;
 bool g_bAttemptingAdvert[MAXPLAYERS + 1] = false;
 bool g_bAdvertPlaying[MAXPLAYERS + 1] = false;
@@ -173,7 +176,6 @@ bool g_bForceJoinGame = false;
 /****************************************************************************************************
 	INTS.
 *****************************************************************************************************/
-int g_iFlagBit;
 int g_iAdvertTotal = -1;
 int g_iAdvertPlays[MAXPLAYERS + 1] = 0;
 int g_iLastAdvertTime[MAXPLAYERS + 1] = 0;
@@ -303,10 +305,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 	} else if (hConVar == g_hCvarAdvertTotal) {
 		g_iAdvertTotal = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarImmunity) {
-		g_iFlagBit = IsValidFlag(szNewValue) ? ReadFlagString(szNewValue) : -1;
-	} else if (hConVar == g_hCvarImmunity) {
-		g_iFlagBit = IsValidFlag(szNewValue) ? ReadFlagString(szNewValue) : -1;
-	} else if (hConVar == g_hCvarKickMotd) {
+		strcopy(g_szImmunityFlag, 1, szNewValue);
+	}  else if (hConVar == g_hCvarKickMotd) {
 		g_bKickMotd = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarSpecAdvertPeriod) {
 		g_fSpecAdvertPeriod = StringToFloat(szNewValue);
@@ -455,9 +455,7 @@ public void UpdateConVars()
 	g_iAdvertTotal = g_hCvarAdvertTotal.IntValue;
 	
 	g_hAdvertUrl.GetString(g_szAdvertUrl, sizeof(g_szAdvertUrl));
-	g_hCvarImmunity.GetString(szBuffer, sizeof(szBuffer));
-	
-	g_iFlagBit = IsValidFlag(szBuffer) ? ReadFlagString(szBuffer) : -1;
+	g_hCvarImmunity.GetString(szBuffer, sizeof(szBuffer)); strcopy(g_szImmunityFlag, 1, szBuffer);
 }
 
 public void OnClientPostAdminCheck(int iClient)
@@ -490,6 +488,10 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	int iClient = iPlayers[0];
 	
 	if (!IsValidClient(iClient)) {
+		return Plugin_Continue;
+	}
+	
+	if(IsClientImmune(iClient)) {
 		return Plugin_Continue;
 	}
 	
@@ -658,12 +660,12 @@ public void OnClientDisconnect(int iClient)
 	}
 	
 	if (g_hRadioTimer[iClient] != null) {
-		CloseHandle(g_hRadioTimer[iClient]);
+		KillTimer(g_hRadioTimer[iClient]);
 		g_hRadioTimer[iClient] = null;
 	}
 	
 	if (g_hSpecTimer[iClient] != null) {
-		CloseHandle(g_hSpecTimer[iClient]);
+		KillTimer(g_hSpecTimer[iClient]);
 		g_hSpecTimer[iClient] = null;
 	}
 }
@@ -718,6 +720,10 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (IsClientImmune(iClient)) {
+		return Plugin_Continue;
+	}
+	
 	if (g_bAttemptingAdvert[iClient] || g_hSpecTimer[iClient] != null) {
 		return Plugin_Continue;
 	}
@@ -729,15 +735,20 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 	return Plugin_Continue;
 }
 
-public Action Event_PlayerTeam(Handle hEvent, char[] chEvent, bool bDontBroadcast)
+public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast)
 {
-	int iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
-	int iTeam = GetEventInt(hEvent, "team");
+	int iClient = GetClientOfUserId(eEvent.GetInt("userid"));
+	int iTeam = eEvent.GetInt("team");
+	bool bDisconnect = eEvent.GetBool("disconnect");
+	
+	if(bDisconnect) {
+		return Plugin_Continue;
+	}
 	
 	if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
 		CreateTimer(0.0, Timer_TryAdvert, GetClientUserId(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	} else if (g_hSpecTimer[iClient] != null) {
-		CloseHandle(g_hSpecTimer[iClient]);
+		KillTimer(g_hSpecTimer[iClient]);
 		g_hSpecTimer[iClient] = null;
 	}
 	
@@ -749,6 +760,11 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	int iClient = GetClientOfUserId(iUserId);
 	
 	if (!IsValidClient(iClient)) {
+		return Plugin_Stop;
+	}
+	
+	if (IsClientImmune(iClient)) {
+		g_bAttemptingAdvert[iClient] = false;
 		return Plugin_Stop;
 	}
 	
@@ -765,14 +781,6 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	}
 	
 	int iTeam = GetClientTeam(iClient);
-	
-	int iFlags = GetUserFlagBits(iClient);
-	g_bImmune[iClient] = g_iFlagBit != -1 ? view_as<bool>(iFlags & g_iFlagBit) : false;
-	
-	if (g_bImmune[iClient]) {
-		g_bAttemptingAdvert[iClient] = false;
-		return Plugin_Stop;
-	}
 	
 	if (g_bAdvertPlaying[iClient]) {
 		if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
@@ -854,7 +862,7 @@ public Action Timer_AfterAdRequest(Handle hTimer, int iUserId)
 
 stock void ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = null)
 {
-	if (g_bAdvertPlaying[iClient] || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {  // Don't set this any lower than 180 or you risk getting banned for spamming adverts.
+	if (g_bAdvertPlaying[iClient] || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180) || IsClientImmune(iClient)) {  // Don't set this any lower than 180 or you risk getting banned for spamming adverts.
 		return;
 	}
 	
@@ -958,11 +966,8 @@ public void Query_MotdCheck(QueryCookie qCookie, int iClient, ConVarQueryResult 
 		return;
 	}
 	
-	int iFlags = GetUserFlagBits(iClient);
-	g_bImmune[iClient] = g_iFlagBit != -1 ? view_as<bool>(iFlags & g_iFlagBit) : false;
-	
 	if (StringToInt(szCvarValue) > 0) {
-		if (g_bKickMotd && !g_bImmune[iClient]) {
+		if (g_bKickMotd && !IsClientImmune(iClient)) {
 			KickClient(iClient, "%t", "Kick Message");
 		}
 	}
@@ -1013,6 +1018,18 @@ stock bool IsValidClient(int iClient)
 	return true;
 }
 
+stock bool IsClientImmune(int iClient) 
+{
+	AdminId aId = GetUserAdmin(iClient);
+	
+	if (aId == INVALID_ADMIN_ID) {
+		return false;
+	}
+	
+	int iFlag = ReadFlagString(g_szImmunityFlag);
+	return ((GetUserFlagBits(iClient) & iFlag) == iFlag);
+}
+
 stock bool CheckGameSpecificConditions()
 {
 	if (g_eVersion == Engine_CSGO) {
@@ -1045,16 +1062,3 @@ stock bool RadioEntryExists(const char[] szEntry)
 	
 	return false;
 }
-
-stock bool IsValidFlag(const char[] szText)
-{
-	int iLen = strlen(szText);
-	
-	for (int i = 0; i < iLen; i++) {
-		if (IsCharNumeric(szText[i]) || !IsCharAlpha(szText[i])) {
-			return false;
-		}
-	}
-	
-	return true;
-} 

@@ -4,16 +4,12 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.3"
-			"Previous"	"1.2.2"
+			"Latest"	"1.2.4"
+			"Previous"	"1.2.3"
 		}
 		
-		"Notes"	"Added initial support for Codename: CURE, BrainBread 2 & Nuclear Dawn, Please report any bugs which you may find."
-		"Notes"	"Improved game detection to use path instead of engine version now, We still use engine version to determine a couple of things though."
-		"Notes"	"Added Cvar sm_vpp_spec_ad_period to play adverts to spectators on a set period (In minutes), Default = 3, Min = 3, 0 = Disabled."
-		"Notes"	"Fixed a couple of issues where Radio would not resume correctly & Fixed a rare case where adverts could resume for players who were not listening it."
-		"Notes"	"Remove adverts at round end / freezetime being a "Good" period, it apppers to have caused a couple of complaints that it was disturbing players."
-		"Notes"	"Removed advert grace period cvar and set it to 3 mins, Adverts should not be playing more often than every 3 mins anyway as it will risk getting you banned for spamming ads."
+		"Notes"	"Fixed timer error from caused by it being closed twice due to disconnect and team event happening at same time"
+		"Notes"	"Fixed Immunity flag not working, (Thanks sneaK for reporting the bug)"
 	}
 	
 	"Files"
