@@ -4,14 +4,14 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.4"
-			"Previous"	"1.2.3"
+			"Latest"	"1.2.5"
+			"Previous"	"1.2.4"
 		}
 		
-		"Notes"	"Fixed timer error from caused by it being closed twice due to disconnect and team event happening at same time"
-		"Notes"	"Fixed Immunity not working, (Thanks sneaK for reporting the bug)"
-		"Notes"	"Added old Cvar catcher (Thanks Pinion for the idea)"
-		"Notes"	"Replaced Cvar sm_vpp_immunity with sm_vpp_immunity_enabled"
+		"Notes"	"Added Cvar sm_vpp_radio_resumation."
+		"Notes"	"Added Cvar sm_vpp_messages."
+		"Notes"	"Overrides now makes reserve flag immune by default, You can change this by using advertisement_immunity inside admin_overrides.cfg."
+		"Notes"	"General code cleanup."
 	}
 	
 	"Files"
