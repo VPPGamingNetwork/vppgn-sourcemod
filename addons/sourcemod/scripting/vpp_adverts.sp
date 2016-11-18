@@ -86,6 +86,11 @@
 							- This Cvar is enabled by default.
 					- Overrides now makes reserve flag immune by default, You can change this by using advertisement_immunity inside admin_overrides.cfg.
 					- General code cleanup.
+			1.2.6 - 
+					- Attempted to fix error, although if its not fixed, then this error is nothing serious.
+					- Made setting sm_vpp_ad_total -1 exlude join adverts, (It will only affect periodic, spec & phase ads now) If you want to disable join adverts you can use sm_vpp_onjoin 0.
+						- This is a lump total of all ads other than the join ad, once it has been reached then no more ads will play the client until he rejoins or map changes.
+					- Made setting sm_vpp_ad_period 0 disable periodic adverts.
 					
 					
 *****************************************************************************************************
@@ -104,7 +109,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.5"
+#define PL_VERSION "1.2.6"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -183,7 +188,6 @@ bool g_bProtoBuf = false;
 bool g_bPhaseAds = false;
 bool g_bKickMotd = false;
 bool g_bPhase = false;
-bool g_bMotdEnabled[MAXPLAYERS + 1] = false;
 bool g_bGameTested = false;
 bool g_bForceJoinGame = false;
 bool g_bImmunityEnabled = false;
@@ -247,23 +251,23 @@ public void OnPluginStart()
 	g_hAdvertUrl = AutoExecConfig_CreateConVar("sm_vpp_url", "", "Put your VPP Advert Link here");
 	g_hAdvertUrl.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join? 0 = Disabled.");
+	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join?, 0 = Disabled.");
 	g_hCvarJoinGame.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many periodic adverts should be played in total? 0 = Unlimited, -1 = Disabled.");
-	g_hCvarAdvertTotal.AddChangeHook(OnCvarChanged);
-	
-	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "15", "How often the periodic adverts should be played (In Minutes)");
+	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "15", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.");
 	g_hCvarAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.");
 	g_hCvarSpecAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
+	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.");
+	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
+	
+	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.");
+	g_hCvarAdvertTotal.AddChangeHook(OnCvarChanged);
+	
 	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Reservation Flag)");
 	g_hCvarImmunityEnabled.AddChangeHook(OnCvarChanged);
-	
-	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Show adverts during game phases (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.");
-	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarKickMotd = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Kick players with motd disabled? (Immune players are ignored), 0 = Disabled.");
 	g_hCvarKickMotd.AddChangeHook(OnCvarChanged);
@@ -347,6 +351,11 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_bPhaseAds = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarAdvertPeriod) {
 		g_fAdvertPeriod = StringToFloat(szNewValue);
+		
+		if (g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
+			g_fAdvertPeriod = 3.0;
+			g_hCvarAdvertPeriod.IntValue = 3;
+		}
 	} else if (hConVar == g_hCvarAdvertTotal) {
 		g_iAdvertTotal = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarImmunityEnabled) {
@@ -381,6 +390,11 @@ public void UpdateConVars()
 	
 	g_fAdvertPeriod = g_hCvarAdvertPeriod.FloatValue;
 	g_fSpecAdvertPeriod = g_hCvarSpecAdvertPeriod.FloatValue;
+	
+	if (g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
+		g_fAdvertPeriod = 3.0;
+		g_hCvarAdvertPeriod.IntValue = 3;
+	}
 	
 	if (g_fSpecAdvertPeriod < 3.0 && g_fSpecAdvertPeriod > 0.0) {
 		g_fSpecAdvertPeriod = 3.0;
@@ -510,6 +524,11 @@ public void OnClientPostAdminCheck(int iClient)
 {
 	if (!IsValidClient(iClient)) {
 		return;
+	}
+	
+	if(g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
+		g_fAdvertPeriod = 3.0;
+		g_hCvarAdvertPeriod.IntValue = 3;
 	}
 	
 	CreateTimer(g_fAdvertPeriod * 60.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
@@ -702,7 +721,6 @@ public void OnClientDisconnect(int iClient)
 	g_bFirstJoin[iClient] = false;
 	g_bAttemptingAdvert[iClient] = false;
 	g_bAdvertPlaying[iClient] = false;
-	g_bMotdEnabled[iClient] = false;
 	
 	if (g_dRadioPack[iClient] != null) {
 		delete g_dRadioPack[iClient];
@@ -710,12 +728,12 @@ public void OnClientDisconnect(int iClient)
 	}
 	
 	if (g_hRadioTimer[iClient] != null) {
-		KillTimer(g_hRadioTimer[iClient]);
+		CloseHandle(g_hRadioTimer[iClient]);
 		g_hRadioTimer[iClient] = null;
 	}
 	
 	if (g_hSpecTimer[iClient] != null) {
-		KillTimer(g_hSpecTimer[iClient]);
+		CloseHandle(g_hSpecTimer[iClient]);
 		g_hSpecTimer[iClient] = null;
 	}
 }
@@ -765,6 +783,10 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0) {
+		return Plugin_Continue;
+	}
+	
 	if (IsClientImmune(iClient)) {
 		return Plugin_Continue;
 	}
@@ -786,14 +808,14 @@ public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast
 	int iTeam = eEvent.GetInt("team");
 	bool bDisconnect = eEvent.GetBool("disconnect");
 	
-	if (bDisconnect) {
+	if (bDisconnect || !IsClientConnected(iClient)) {
 		return Plugin_Continue;
 	}
 	
 	if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
 		CreateTimer(0.0, Timer_TryAdvert, GetClientUserId(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	} else if (g_hSpecTimer[iClient] != null) {
-		KillTimer(g_hSpecTimer[iClient]);
+		CloseHandle(g_hSpecTimer[iClient]);
 		g_hSpecTimer[iClient] = null;
 	}
 	
@@ -805,22 +827,27 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	int iClient = GetClientOfUserId(iUserId);
 	
 	if (!IsValidClient(iClient)) {
+		g_bAttemptingAdvert[iClient] = false;
+		g_hSpecTimer[iClient] = null;
 		return Plugin_Stop;
 	}
 	
 	if (IsClientImmune(iClient)) {
 		g_bAttemptingAdvert[iClient] = false;
+		g_hSpecTimer[iClient] = null;
 		return Plugin_Stop;
 	}
 	
-	if (g_iAdvertTotal <= -1) {
+	if (g_iAdvertTotal <= -1 && !g_bFirstJoin[iClient]) {
 		g_bAttemptingAdvert[iClient] = false;
+		g_hSpecTimer[iClient] = null;
 		return Plugin_Stop;
 	}
 	
-	if (g_iAdvertTotal > 0) {
+	if (g_iAdvertTotal > 0 && !g_bFirstJoin[iClient]) {
 		if (g_iAdvertPlays[iClient] >= g_iAdvertTotal) {
 			g_bAttemptingAdvert[iClient] = false;
+			g_hSpecTimer[iClient] = null;
 			return Plugin_Stop;
 		}
 	}
@@ -833,6 +860,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		}
 		
 		g_bAttemptingAdvert[iClient] = false;
+		g_hSpecTimer[iClient] = null;
 		return Plugin_Stop;
 	}
 	
@@ -846,6 +874,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		}
 		
 		g_bAttemptingAdvert[iClient] = false;
+		g_hSpecTimer[iClient] = null;
 		return Plugin_Stop;
 	}
 	
@@ -862,7 +891,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	ShowAdvert(iClient, USERMSG_RELIABLE);
 	
 	g_bAttemptingAdvert[iClient] = false;
-	
+	g_hSpecTimer[iClient] = null;
 	return Plugin_Stop;
 }
 
@@ -927,7 +956,10 @@ stock void ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = 
 	CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 	
 	g_iLastAdvertTime[iClient] = GetTime();
-	g_iAdvertPlays[iClient]++;
+	
+	if (!g_bFirstJoin[iClient]) {
+		g_iAdvertPlays[iClient]++;
+	}
 	
 	g_bFirstJoin[iClient] = false;
 }

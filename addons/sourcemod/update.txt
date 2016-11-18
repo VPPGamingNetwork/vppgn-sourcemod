@@ -4,14 +4,13 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.5"
-			"Previous"	"1.2.4"
+			"Latest"	"1.2.6"
+			"Previous"	"1.2.5"
 		}
 		
-		"Notes"	"Added Cvar sm_vpp_radio_resumation."
-		"Notes"	"Added Cvar sm_vpp_messages."
-		"Notes"	"Overrides now makes reserve flag immune by default, You can change this by using advertisement_immunity inside admin_overrides.cfg."
-		"Notes"	"General code cleanup."
+		"Notes"	"Attempted to fix error, although if its not fixed, then this error is nothing serious."
+		"Notes"	"Made setting sm_vpp_ad_total -1 exlude join adverts, (It will only affect periodic, spec & phase ads now) If you want to disable join adverts you can use sm_vpp_onjoin 0."
+		"Notes"	"Made setting sm_vpp_ad_period 0 disable periodic adverts."
 	}
 	
 	"Files"
