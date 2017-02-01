@@ -4,13 +4,12 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.6"
-			"Previous"	"1.2.5"
+			"Latest"	"1.2.7"
+			"Previous"	"1.2.6"
 		}
 		
-		"Notes"	"Attempted to fix error, although if its not fixed, then this error is nothing serious."
-		"Notes"	"Made setting sm_vpp_ad_total -1 exlude join adverts, (It will only affect periodic, spec & phase ads now) If you want to disable join adverts you can use sm_vpp_onjoin 0."
-		"Notes"	"Made setting sm_vpp_ad_period 0 disable periodic adverts."
+		"Notes"	"Fixed a regression with overriding Motd on ProtoBuf games."
+		"Notes"	"Added Cvar sm_vpp_onjoin_type, 1 = Override Motd, 2 = Wait for team join. (If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1)"
 	}
 	
 	"Files"

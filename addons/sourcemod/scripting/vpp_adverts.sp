@@ -91,7 +91,10 @@
 					- Made setting sm_vpp_ad_total -1 exlude join adverts, (It will only affect periodic, spec & phase ads now) If you want to disable join adverts you can use sm_vpp_onjoin 0.
 						- This is a lump total of all ads other than the join ad, once it has been reached then no more ads will play the client until he rejoins or map changes.
 					- Made setting sm_vpp_ad_period 0 disable periodic adverts.
-					
+			1.2.7 - 
+					- Fixed a regression with overriding Motd on ProtoBuf games.
+					- Added Cvar sm_vpp_onjoin_type, 1 = Override Motd, 2 = Wait for team join.
+						- If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -109,7 +112,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.6"
+#define PL_VERSION "1.2.7"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -144,6 +147,7 @@ ConVar g_hCvarKickMotd = null;
 ConVar g_hCvarSpecAdvertPeriod = null;
 ConVar g_hCvarRadioResumation = null;
 ConVar g_hCvarMessages = null;
+ConVar g_hCvarJoinType = null;
 
 Handle g_hRadioTimer[MAXPLAYERS + 1] = null;
 Handle g_hSpecTimer[MAXPLAYERS + 1] = null;
@@ -160,6 +164,7 @@ char g_szGameName[256];
 
 char g_szTestedGames[][] =  {
 	"csgo", 
+	"csco", 
 	"tf", 
 	"cstrike", 
 	"cure", 
@@ -200,6 +205,8 @@ bool g_bMessages = false;
 int g_iAdvertTotal = -1;
 int g_iAdvertPlays[MAXPLAYERS + 1] = 0;
 int g_iLastAdvertTime[MAXPLAYERS + 1] = 0;
+int g_iJoinType = 1;
+int g_iMotdOccurence[MAXPLAYERS + 1] = 0;
 
 /****************************************************************************************************
 	FLOATS.
@@ -278,6 +285,9 @@ public void OnPluginStart()
 	g_hCvarMessages = AutoExecConfig_CreateConVar("sm_vpp_messages", "1", "Show messages to clients, 0 = Disabled.");
 	g_hCvarMessages.AddChangeHook(OnCvarChanged);
 	
+	g_hCvarJoinType = AutoExecConfig_CreateConVar("sm_vpp_onjoin_type", "1", "1 = Override Motd, 2 = Wait for team join, Method 2 is best for CSGO.", _, true, 1.0, true, 2.0);
+	g_hCvarJoinType.AddChangeHook(OnCvarChanged);
+	
 	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
 	
 	HookEventEx("game_win", Phase_Hooks, EventHookMode_Pre);
@@ -307,6 +317,10 @@ public void OnPluginStart()
 	
 	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
+	
+	LoopValidClients(iClient) {
+		OnClientPutInServer(iClient);
+	}
 }
 
 public Action OldCvarFound(int iArgs)
@@ -387,6 +401,7 @@ public void UpdateConVars()
 	g_bImmunityEnabled = g_hCvarImmunityEnabled.BoolValue;
 	g_bRadioResumation = g_hCvarRadioResumation.BoolValue;
 	g_bMessages = g_hCvarMessages.BoolValue;
+	g_iJoinType = g_hCvarJoinType.IntValue;
 	
 	g_fAdvertPeriod = g_hCvarAdvertPeriod.FloatValue;
 	g_fSpecAdvertPeriod = g_hCvarSpecAdvertPeriod.FloatValue;
@@ -520,13 +535,9 @@ stock void LoadThirdPartyRadioStations()
 	}
 }
 
-public void OnClientPostAdminCheck(int iClient)
+public void OnClientPutInServer(int iClient)
 {
-	if (!IsValidClient(iClient)) {
-		return;
-	}
-	
-	if(g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
+	if (g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
 		g_fAdvertPeriod = 3.0;
 		g_hCvarAdvertPeriod.IntValue = 3;
 	}
@@ -538,6 +549,7 @@ public void OnClientPostAdminCheck(int iClient)
 	}
 	
 	g_bFirstJoin[iClient] = true;
+	g_iMotdOccurence[iClient] = 0;
 }
 
 public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iPlayersNum, bool bReliable, bool bInit)
@@ -545,10 +557,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	int iClient = iPlayers[0];
 	
 	if (!IsValidClient(iClient)) {
-		return Plugin_Continue;
-	}
-	
-	if (IsClientImmune(iClient)) {
 		return Plugin_Continue;
 	}
 	
@@ -606,9 +614,17 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		return Plugin_Handled;
 	}
 	
-	if (StrEqual(szUrl, "motd") && g_bFirstJoin[iClient]) {
+	if (StrEqual(szUrl, "motd")) {
 		if (g_bProtoBuf) {
-			ShowAdvert(iClient, USERMSG_RELIABLE, hMsg);
+			if (g_iMotdOccurence[iClient] == 1) {
+				if (g_iJoinType == 2 || !IsClientAuthorized(iClient)) {
+					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+				} else {
+					if (!ShowAdvert(iClient, USERMSG_RELIABLE, hMsg)) {
+						return Plugin_Continue;
+					}
+				}
+			}
 		} else {
 			switch (g_eVersion) {
 				case Engine_Left4Dead, Engine_Left4Dead2, 19: {
@@ -621,6 +637,8 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 				}
 			}
 		}
+		
+		g_iMotdOccurence[iClient]++;
 		
 		return Plugin_Continue;
 	}
@@ -721,6 +739,7 @@ public void OnClientDisconnect(int iClient)
 	g_bFirstJoin[iClient] = false;
 	g_bAttemptingAdvert[iClient] = false;
 	g_bAdvertPlaying[iClient] = false;
+	g_iMotdOccurence[iClient] = 0;
 	
 	if (g_dRadioPack[iClient] != null) {
 		delete g_dRadioPack[iClient];
@@ -783,6 +802,10 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (!IsClientAuthorized(iClient)) {
+		return Plugin_Continue;
+	}
+	
 	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0) {
 		return Plugin_Continue;
 	}
@@ -832,6 +855,10 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (!IsClientAuthorized(iClient)) {
+		return Plugin_Continue;
+	}
+	
 	if (IsClientImmune(iClient)) {
 		g_bAttemptingAdvert[iClient] = false;
 		g_hSpecTimer[iClient] = null;
@@ -864,8 +891,10 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if (g_eVersion == Engine_DODS && iTeam < 1) {
-		return Plugin_Continue;
+	if (iTeam < 1) {
+		if (g_eVersion == Engine_DODS || (g_bFirstJoin[iClient] && g_iJoinType == 2)) {
+			return Plugin_Continue;
+		}
 	}
 	
 	if (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180) {
@@ -934,16 +963,16 @@ public Action Timer_AfterAdRequest(Handle hTimer, int iUserId)
 	return Plugin_Stop;
 }
 
-stock void ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = null)
+stock bool ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = null)
 {
-	if (g_bAdvertPlaying[iClient] || IsClientImmune(iClient) || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
-		return;
+	if (!IsClientAuthorized(iClient) || g_bAdvertPlaying[iClient] || IsClientImmune(iClient) || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
+		return false;
 	}
 	
 	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdCheck) < view_as<QueryCookie>(0)) {  }
 	
 	if (!IsValidClient(iClient)) {
-		return;
+		return false;
 	}
 	
 	TrimString(g_szAdvertUrl); StripQuotes(g_szAdvertUrl);
@@ -962,6 +991,8 @@ stock void ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = 
 	}
 	
 	g_bFirstJoin[iClient] = false;
+	
+	return true;
 }
 
 stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = USERMSG_RELIABLE, bool bShow = true, Handle hMsg = null)
@@ -980,6 +1011,7 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 		hKv.SetNum("cmd", 5);
 		hMsg = StartMessageOne("VGUIMenu", iClient, iFlags);
 	} else {
+		bShow = true;
 		bOverride = true;
 	}
 	
