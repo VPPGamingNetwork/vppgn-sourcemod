@@ -6,6 +6,7 @@
 #include <cURL>
 #include <socket>
 #include <steamtools>
+#include <SteamWorks>
 #define REQUIRE_EXTENSIONS
 
 /* Plugin Info */
@@ -27,12 +28,13 @@ public Plugin:myinfo =
 #define CURL_AVAILABLE()		(GetFeatureStatus(FeatureType_Native, "curl_easy_init") == FeatureStatus_Available)
 #define SOCKET_AVAILABLE()		(GetFeatureStatus(FeatureType_Native, "SocketCreate") == FeatureStatus_Available)
 #define STEAMTOOLS_AVAILABLE()	(GetFeatureStatus(FeatureType_Native, "Steam_CreateHTTPRequest") == FeatureStatus_Available)
+#define STEAMWORKS_AVAILABLE()	(GetFeatureStatus(FeatureType_Native, "SteamWorks_WriteHTTPResponseBodyToFile") == FeatureStatus_Available)
 
-#define EXTENSION_ERROR		"This plugin requires either the cURL, Socket, or SteamTools extension to function."
+#define EXTENSION_ERROR		"This plugin requires either the cURL, Socket, SteamTools or SteamWorks extension to function."
 #define TEMP_FILE_EXT		"temp"		// All files are downloaded with this extension first.
 #define MAX_URL_LENGTH		256
 
-#define UPDATE_URL			"http://godtony.mooo.com/updater/updater.txt"
+#define UPDATE_URL			""
 
 enum UpdateStatus {
 	Status_Idle,		
@@ -94,7 +96,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 }
 
 public OnPluginStart() {
-	if (!CURL_AVAILABLE() && !SOCKET_AVAILABLE() && !STEAMTOOLS_AVAILABLE()) {
+	if (!CURL_AVAILABLE() && !SOCKET_AVAILABLE() && !STEAMTOOLS_AVAILABLE() && !STEAMWORKS_AVAILABLE()) {
 		SetFailState(EXTENSION_ERROR);
 	}
 	

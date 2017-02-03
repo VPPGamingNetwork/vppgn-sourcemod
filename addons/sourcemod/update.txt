@@ -4,17 +4,19 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.7"
-			"Previous"	"1.2.6"
+			"Latest"	"1.2.8"
+			"Previous"	"1.2.7"
 		}
 		
-		"Notes"	"Fixed a regression with overriding Motd on ProtoBuf games."
-		"Notes"	"Added Cvar sm_vpp_onjoin_type, 1 = Override Motd, 2 = Wait for team join. (If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1)"
+		"Notes"	"Fixed team join getting stuck on CSCO and potentially on CSGO aswell."
+		"Notes"	"Fixed Convar change hook for sm_vpp_onjoin_type."
+		"Notes"	"Fixed SteamWorks support in Updater."
 	}
 	
 	"Files"
 	{
 		"Plugin"	"Path_SM/plugins/vpp_adverts.smx"
+		"Plugin"	"Path_SM/plugins/updater.smx"
 		"Plugin"	"Path_SM/translations/vppadverts.phrases.txt"
 		"Plugin"	"Path_SM/configs/vpp_adverts_radios.txt"
 		"Plugin"	"Path_SM/configs/vpp_adverts_radios_custom.txt"

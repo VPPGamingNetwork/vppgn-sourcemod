@@ -95,6 +95,11 @@
 					- Fixed a regression with overriding Motd on ProtoBuf games.
 					- Added Cvar sm_vpp_onjoin_type, 1 = Override Motd, 2 = Wait for team join.
 						- If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1.
+			1.2.8 - 
+					- Fixed team join getting stuck on CSCO and potentially on CSGO aswell.
+					- Fixed Convar change hook for sm_vpp_onjoin_type.
+					- Fixed SteamWorks support in Updater.
+					
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -112,7 +117,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.7"
+#define PL_VERSION "1.2.8"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -386,6 +391,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_bRadioResumation = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarMessages) {
 		g_bMessages = view_as<bool>(StringToInt(szNewValue));
+	} else if (hConVar == g_hCvarJoinType) {
+		g_iJoinType = StringToInt(szNewValue);
 	}
 }
 
@@ -1011,15 +1018,16 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 		hKv.SetNum("cmd", 5);
 		hMsg = StartMessageOne("VGUIMenu", iClient, iFlags);
 	} else {
-		bShow = true;
 		bOverride = true;
 	}
 	
 	char szKey[256]; char szValue[256];
 	
 	if (g_bProtoBuf) {
-		PbSetString(hMsg, "name", "info");
-		PbSetBool(hMsg, "show", bShow);
+		if(!bOverride) {
+			PbSetString(hMsg, "name", "info");
+			PbSetBool(hMsg, "show", bShow);
+		}
 		
 		Handle hSubKey;
 		
