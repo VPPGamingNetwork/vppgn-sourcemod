@@ -4,13 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.2.8"
-			"Previous"	"1.2.7"
+			"Latest"	"1.2.9"
+			"Previous"	"1.2.8"
 		}
 		
-		"Notes"	"Fixed team join getting stuck on CSCO and potentially on CSGO aswell."
-		"Notes"	"Fixed Convar change hook for sm_vpp_onjoin_type."
-		"Notes"	"Fixed SteamWorks support in Updater."
+		"Notes"	"Added Cvar sm_vpp_wait_until_dead, this Cvar is disabled by default, If you run a gamemode where players don't die then you will want to leave this disabled."
 	}
 	
 	"Files"
