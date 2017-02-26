@@ -99,6 +99,10 @@
 					- Fixed team join getting stuck on CSCO and potentially on CSGO aswell.
 					- Fixed Convar change hook for sm_vpp_onjoin_type.
 					- Fixed SteamWorks support in Updater.
+			1.2.9 - 
+					- Added Cvar sm_vpp_wait_until_dead
+						- When enabled the plugin will wait until the player is dead before playing an advert (Except first join).
+						- This Cvar is disabled by default, If you run a gamemode where players don't die then you will want to leave this disabled.
 					
 					
 *****************************************************************************************************
@@ -114,10 +118,11 @@
 
 #define UPDATE_URL    "http://vppgamingnetwork.com/smplugin/update.txt"
 
+
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.8"
+#define PL_VERSION "1.2.9"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -153,6 +158,7 @@ ConVar g_hCvarSpecAdvertPeriod = null;
 ConVar g_hCvarRadioResumation = null;
 ConVar g_hCvarMessages = null;
 ConVar g_hCvarJoinType = null;
+ConVar g_hCvarWaitUntilDead = null;
 
 Handle g_hRadioTimer[MAXPLAYERS + 1] = null;
 Handle g_hSpecTimer[MAXPLAYERS + 1] = null;
@@ -203,6 +209,7 @@ bool g_bForceJoinGame = false;
 bool g_bImmunityEnabled = false;
 bool g_bRadioResumation = false;
 bool g_bMessages = false;
+bool g_bWaitUntilDead = false;
 
 /****************************************************************************************************
 	INTS.
@@ -292,6 +299,9 @@ public void OnPluginStart()
 	
 	g_hCvarJoinType = AutoExecConfig_CreateConVar("sm_vpp_onjoin_type", "1", "1 = Override Motd, 2 = Wait for team join, Method 2 is best for CSGO.", _, true, 1.0, true, 2.0);
 	g_hCvarJoinType.AddChangeHook(OnCvarChanged);
+	
+	g_hCvarWaitUntilDead = AutoExecConfig_CreateConVar("sm_vpp_wait_until_dead", "0", "Wait until player is dead (Except first join) 0 = Disabled.");
+	g_hCvarWaitUntilDead.AddChangeHook(OnCvarChanged);
 	
 	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
 	
@@ -389,6 +399,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		}
 	} else if (hConVar == g_hCvarRadioResumation) {
 		g_bRadioResumation = view_as<bool>(StringToInt(szNewValue));
+	} else if (hConVar == g_hCvarWaitUntilDead) {
+		g_bWaitUntilDead = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarMessages) {
 		g_bMessages = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarJoinType) {
@@ -407,6 +419,7 @@ public void UpdateConVars()
 	g_bPhaseAds = g_hCvarPhaseAds.BoolValue;
 	g_bImmunityEnabled = g_hCvarImmunityEnabled.BoolValue;
 	g_bRadioResumation = g_hCvarRadioResumation.BoolValue;
+	g_bWaitUntilDead = g_hCvarWaitUntilDead.BoolValue;
 	g_bMessages = g_hCvarMessages.BoolValue;
 	g_iJoinType = g_hCvarJoinType.IntValue;
 	
@@ -914,7 +927,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if (IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
+	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
 		return Plugin_Continue;
 	}
 	
@@ -1024,7 +1037,7 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	char szKey[256]; char szValue[256];
 	
 	if (g_bProtoBuf) {
-		if(!bOverride) {
+		if (!bOverride) {
 			PbSetString(hMsg, "name", "info");
 			PbSetBool(hMsg, "show", bShow);
 		}
