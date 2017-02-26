@@ -297,7 +297,7 @@ public void OnPluginStart()
 	g_hCvarMessages = AutoExecConfig_CreateConVar("sm_vpp_messages", "1", "Show messages to clients, 0 = Disabled.");
 	g_hCvarMessages.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarJoinType = AutoExecConfig_CreateConVar("sm_vpp_onjoin_type", "1", "1 = Override Motd, 2 = Wait for team join, Method 2 is best for CSGO.", _, true, 1.0, true, 2.0);
+	g_hCvarJoinType = AutoExecConfig_CreateConVar("sm_vpp_onjoin_type", "1", "2 = Wait for team join, If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1.", _, true, 1.0, true, 2.0);
 	g_hCvarJoinType.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarWaitUntilDead = AutoExecConfig_CreateConVar("sm_vpp_wait_until_dead", "0", "Wait until player is dead (Except first join) 0 = Disabled.");
