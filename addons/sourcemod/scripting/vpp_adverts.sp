@@ -106,7 +106,7 @@
 			1.3.0 - 
 					- Fixed radio resumation in cases where the radio was started before the advert started.
 					- Fixed an issue where the periodic ad timer would repeat itself even when Periodic ads were disabled.
-					- Added Cvar sm_vpp_every_x_deaths
+					- Added Cvar sm_vpp_every_x_deaths (Default 0) If you have a DM / Retakes / Arena or mod where the client dies a lot then you will want to leave this at 0.
 						- This Cvar allows you to play adverts every time the client dies this many times, Please note that if the last ad was less than 3 mins it will it will wait until 3 mins have passed.
 					- Added some developer stuff for people who want to play ads in various other scenarios.
 						- Forward VPP_OnAdvertStarted(int iClient, const char[] szRadioResumeUrl);
@@ -299,7 +299,7 @@ public void OnPluginStart()
 	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.");
 	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "4", "Play an advert every time somebody dies this many times, 0 = Disabled.");
+	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "0", "Play an advert every time somebody dies this many times, 0 = Disabled.");
 	g_hCvarDeathAds.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.");
