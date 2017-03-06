@@ -103,6 +103,16 @@
 					- Added Cvar sm_vpp_wait_until_dead
 						- When enabled the plugin will wait until the player is dead before playing an advert (Except first join).
 						- This Cvar is disabled by default, If you run a gamemode where players don't die then you will want to leave this disabled.
+			1.3.0 - 
+					- Fixed radio resumation in cases where the radio was started before the advert started.
+					- Fixed an issue where the periodic ad timer would repeat itself even when Periodic ads were disabled.
+					- Added Cvar sm_vpp_every_x_deaths
+						- This Cvar allows you to play adverts every time the client dies this many times, Please note that if the last ad was less than 3 mins it will it will wait until 3 mins have passed.
+					- Added some developer stuff for people who want to play ads in various other scenarios.
+						- Forward VPP_OnAdvertStarted(int iClient, const char[] szRadioResumeUrl);
+						- Forward VPP_OnAdvertFinished(int iClient, const char[] szRadioResumeUrl);
+						- Native BOOL VPP_PlayAdvert(int iClient) - Note to prevent spam it will delay the ad until 3 mins have passed since previous ad (If applicable)
+						- Native BOOL VPP_IsAdvertPlaying(int iClient);
 					
 					
 *****************************************************************************************************
@@ -112,6 +122,7 @@
 #include <sdktools>
 #include <autoexecconfig>
 #include <multicolors>
+#include <vpp_adverts>
 
 #undef REQUIRE_PLUGIN
 #include <updater>
@@ -122,7 +133,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.2.9"
+#define PL_VERSION "1.3.0"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -159,12 +170,15 @@ ConVar g_hCvarRadioResumation = null;
 ConVar g_hCvarMessages = null;
 ConVar g_hCvarJoinType = null;
 ConVar g_hCvarWaitUntilDead = null;
+ConVar g_hCvarDeathAds = null;
 
-Handle g_hRadioTimer[MAXPLAYERS + 1] = null;
+Handle g_hFinishedTimer[MAXPLAYERS + 1] = null;
 Handle g_hSpecTimer[MAXPLAYERS + 1] = null;
+Handle g_hPeriodicTimer[MAXPLAYERS + 1] = null;
+Handle g_hOnAdvertStarted = null;
+Handle g_hOnAdvertFinished = null;
 
 ArrayList g_alRadioStations = null;
-DataPack g_dRadioPack[MAXPLAYERS + 1] = null;
 EngineVersion g_eVersion = Engine_Unknown;
 
 /****************************************************************************************************
@@ -193,6 +207,8 @@ char g_szJoinGames[][] =  {
 	"cstrike"
 };
 
+char g_szResumeUrl[MAXPLAYERS + 1][256];
+
 /****************************************************************************************************
 	BOOLS.
 *****************************************************************************************************/
@@ -219,6 +235,7 @@ int g_iAdvertPlays[MAXPLAYERS + 1] = 0;
 int g_iLastAdvertTime[MAXPLAYERS + 1] = 0;
 int g_iJoinType = 1;
 int g_iMotdOccurence[MAXPLAYERS + 1] = 0;
+int g_iDeathAdCount = 0;
 
 /****************************************************************************************************
 	FLOATS.
@@ -282,6 +299,9 @@ public void OnPluginStart()
 	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.");
 	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
 	
+	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "4", "Play an advert every time somebody dies this many times, 0 = Disabled.");
+	g_hCvarDeathAds.AddChangeHook(OnCvarChanged);
+	
 	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.");
 	g_hCvarAdvertTotal.AddChangeHook(OnCvarChanged);
 	
@@ -318,7 +338,8 @@ public void OnPluginStart()
 	HookEventEx("dod_game_over", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("dod_win_panel", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("round_start", Event_RoundStart, EventHookMode_Post);
-	HookEvent("player_team", Event_PlayerTeam, EventHookMode_Post);
+	HookEventEx("player_team", Event_PlayerTeam, EventHookMode_Post);
+	HookEventEx("player_death", Event_PlayerDeath, EventHookMode_Post);
 	
 	LoadTranslations("vppadverts.phrases.txt");
 	
@@ -334,8 +355,32 @@ public void OnPluginStart()
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
 	
 	LoopValidClients(iClient) {
-		OnClientPutInServer(iClient);
+		OnClientPutInServer(iClient); g_bFirstJoin[iClient] = false;
 	}
+	
+	g_hOnAdvertStarted = CreateGlobalForward("VPP_OnAdvertStarted", ET_Ignore, Param_Cell, Param_String);
+	g_hOnAdvertFinished = CreateGlobalForward("VPP_OnAdvertFinished", ET_Ignore, Param_Cell, Param_String);
+}
+
+public APLRes AskPluginLoad2(Handle hNyself, bool bLate, char[] chError, int iErrMax)
+{
+	CreateNative("VPP_PlayAdvert", Native_PlayAdvert);
+	CreateNative("VPP_IsAdvertPlaying", Native_IsAdvertPlaying);
+	
+	RegPluginLibrary("VPPAdverts");
+	return APLRes_Success;
+}
+
+public int Native_IsAdvertPlaying(Handle hPlugin, int iNumParams) {
+	int iClient = GetNativeCell(1);
+	
+	return g_bAdvertPlaying[iClient];
+}
+
+public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
+	int iClient = GetNativeCell(1);
+	
+	return CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE) != null;
 }
 
 public Action OldCvarFound(int iArgs)
@@ -384,11 +429,27 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		if (g_fAdvertPeriod > 0.0 && g_fAdvertPeriod < 3.0) {
 			g_fAdvertPeriod = 3.0;
 			g_hCvarAdvertPeriod.IntValue = 3;
+			
+			if (g_fAdvertPeriod > 0.0) {
+				LoopValidClients(iClient) {
+					OnClientPutInServer(iClient); g_bFirstJoin[iClient] = false;
+				}
+			}
 		}
 	} else if (hConVar == g_hCvarAdvertTotal) {
 		g_iAdvertTotal = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarImmunityEnabled) {
 		g_bImmunityEnabled = view_as<bool>(StringToInt(szNewValue));
+		
+		if(g_bImmunityEnabled) {
+			LoopValidClients(iClient) {
+				if(!CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION)) {
+					continue;
+				}
+				
+				OnClientPutInServer(iClient);
+			}
+		}
 	} else if (hConVar == g_hCvarKickMotd) {
 		g_bKickMotd = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarSpecAdvertPeriod) {
@@ -405,6 +466,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_bMessages = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarJoinType) {
 		g_iJoinType = StringToInt(szNewValue);
+	} else if (hConVar == g_hCvarDeathAds) {
+		g_iDeathAdCount = StringToInt(szNewValue);
 	}
 }
 
@@ -436,6 +499,7 @@ public void UpdateConVars()
 		g_hCvarSpecAdvertPeriod.IntValue = 3;
 	}
 	
+	g_iDeathAdCount = g_hCvarDeathAds.IntValue;
 	g_iAdvertTotal = g_hCvarAdvertTotal.IntValue;
 	
 	g_hAdvertUrl.GetString(g_szAdvertUrl, sizeof(g_szAdvertUrl));
@@ -562,7 +626,13 @@ public void OnClientPutInServer(int iClient)
 		g_hCvarAdvertPeriod.IntValue = 3;
 	}
 	
-	CreateTimer(g_fAdvertPeriod * 60.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+	if (g_fAdvertPeriod > 0.0) {
+		if (g_hPeriodicTimer[iClient] != null) {
+			delete g_hPeriodicTimer[iClient];
+		}
+		
+		g_hPeriodicTimer[iClient] = CreateTimer(g_fAdvertPeriod * 60.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+	}
 	
 	if (!g_bJoinGame) {
 		return;
@@ -570,6 +640,7 @@ public void OnClientPutInServer(int iClient)
 	
 	g_bFirstJoin[iClient] = true;
 	g_iMotdOccurence[iClient] = 0;
+	strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 }
 
 public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iPlayersNum, bool bReliable, bool bInit)
@@ -641,9 +712,18 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 				} else {
 					if (!ShowAdvert(iClient, USERMSG_RELIABLE, hMsg)) {
-						return Plugin_Continue;
+						CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					} else {
+						if (g_hFinishedTimer[iClient] == null) {
+							g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+						}
+						
+						RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
+						g_bAdvertPlaying[iClient] = true;
 					}
 				}
+				
+				return Plugin_Continue;
 			}
 		} else {
 			switch (g_eVersion) {
@@ -674,6 +754,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			g_alRadioStations.GetString(i, szBuffer, sizeof(szBuffer));
 			
 			if (StrContains(szUrl, szBuffer, false) != -1) {
+				strcopy(g_szResumeUrl[iClient], 128, szUrl);
 				bRadio = true;
 				break;
 			}
@@ -681,45 +762,71 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (StrEqual(szTitle, "VPP Network Advertisement MOTD") || StrEqual(szUrl, g_szAdvertUrl, false)) {
-		if (g_hRadioTimer[iClient] == null && g_dRadioPack[iClient] != null && g_bRadioResumation) {
-			g_hRadioTimer[iClient] = CreateTimer(0.0, Timer_AfterAdRequest, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+		if (g_hFinishedTimer[iClient] == null) {
+			g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 		}
 		
 		if (g_bAdvertPlaying[iClient]) {
 			return Plugin_Handled;
 		}
 		
-		g_bAdvertPlaying[iClient] = true;
+		RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
 		
+		g_bAdvertPlaying[iClient] = true;
 		return Plugin_Continue;
 	}
 	
 	if (g_bAdvertPlaying[iClient]) {
-		if (bRadio && g_bRadioResumation) {
-			DataPack dPack = CreateDataPack();
-			dPack.WriteCell(GetClientUserId(iClient));
-			dPack.WriteString(szTitle); dPack.WriteString(szUrl);
+		if (bRadio || (!StrEqual(g_szResumeUrl[iClient], "", false) && !StrEqual(g_szResumeUrl[iClient], "about:blank", false)) && g_bRadioResumation) {
 			
-			if (g_dRadioPack[iClient] != null) {
-				delete g_dRadioPack[iClient];
-				g_dRadioPack[iClient] = null;
-			}
+			strcopy(g_szResumeUrl[iClient], 128, szUrl);
 			
-			g_dRadioPack[iClient] = dPack;
-			
-			if (g_hRadioTimer[iClient] == null && g_dRadioPack[iClient] != null) {
-				g_hRadioTimer[iClient] = CreateTimer(0.0, Timer_AfterAdRequest, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+			if (g_hFinishedTimer[iClient] == null) {
+				g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 			}
 			
 			RequestFrame(PrintRadioMessage, GetClientUserId(iClient));
-			return Plugin_Handled;
+		} else {
+			
+			if (g_bFirstJoin[iClient] || g_iMotdOccurence[iClient] == 1) {
+				strcopy(g_szResumeUrl[iClient], 128, szUrl);
+			} else {
+				RequestFrame(PrintMiscMessage, GetClientUserId(iClient));
+			}
 		}
 		
-		RequestFrame(PrintMiscMessage, GetClientUserId(iClient));
 		return Plugin_Handled;
 	}
 	
 	return Plugin_Continue;
+}
+
+public void Frame_AdvertStartedForward(int iUserId)
+{
+	int iClient = GetClientOfUserId(iUserId);
+	
+	if (!IsValidClient(iClient)) {
+		return;
+	}
+	
+	Call_StartForward(g_hOnAdvertStarted);
+	Call_PushCell(iClient);
+	Call_PushString(g_szResumeUrl[iClient]);
+	Call_Finish();
+}
+
+public void Frame_AdvertFinishedForward(int iUserId)
+{
+	int iClient = GetClientOfUserId(iUserId);
+	
+	if (!IsValidClient(iClient)) {
+		return;
+	}
+	
+	Call_StartForward(g_hOnAdvertFinished);
+	Call_PushCell(iClient);
+	Call_PushString(g_szResumeUrl[iClient]);
+	Call_Finish();
 }
 
 public void PrintRadioMessage(int iUserId)
@@ -761,20 +868,25 @@ public void OnClientDisconnect(int iClient)
 	g_bAdvertPlaying[iClient] = false;
 	g_iMotdOccurence[iClient] = 0;
 	
-	if (g_dRadioPack[iClient] != null) {
-		delete g_dRadioPack[iClient];
-		g_dRadioPack[iClient] = null;
+	if (g_hPeriodicTimer[iClient] != null) {
+		delete g_hPeriodicTimer[iClient];
 	}
 	
-	if (g_hRadioTimer[iClient] != null) {
-		CloseHandle(g_hRadioTimer[iClient]);
-		g_hRadioTimer[iClient] = null;
+	g_hPeriodicTimer[iClient] = null;
+	
+	if (g_hFinishedTimer[iClient] != null) {
+		delete g_hFinishedTimer[iClient];
 	}
+	
+	g_hFinishedTimer[iClient] = null;
 	
 	if (g_hSpecTimer[iClient] != null) {
-		CloseHandle(g_hSpecTimer[iClient]);
-		g_hSpecTimer[iClient] = null;
+		delete g_hFinishedTimer[iClient];
 	}
+	
+	g_hSpecTimer[iClient] = null;
+	
+	strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 }
 
 public void OnMapEnd() {
@@ -818,7 +930,7 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 {
 	int iClient = GetClientOfUserId(iUserId);
 	
-	if (!IsValidClient(iClient)) {
+	if (iClient <= 0 || iClient > MaxClients) {
 		return Plugin_Stop;
 	}
 	
@@ -826,12 +938,12 @@ public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
 		return Plugin_Continue;
 	}
 	
-	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0) {
+	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0 && g_iDeathAdCount <= 0) {
 		return Plugin_Continue;
 	}
 	
 	if (IsClientImmune(iClient)) {
-		return Plugin_Continue;
+		return Plugin_Stop;
 	}
 	
 	if (g_bAttemptingAdvert[iClient] || g_hSpecTimer[iClient] != null) {
@@ -863,6 +975,22 @@ public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast
 	}
 	
 	return Plugin_Continue;
+}
+
+public void Event_PlayerDeath(Event evEvent, char[] szEvent, bool bDontBroadcast)
+{
+	if (CheckGameSpecificConditions()) {
+		return;
+	}
+	
+	int iClient = GetClientOfUserId(evEvent.GetInt("userid"));
+	int iDeathCount = GetClientDeaths(iClient);
+	
+	if (g_iDeathAdCount > 0) {
+		if (iDeathCount % g_iDeathAdCount == 0) {
+			CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+		}
+	}
 }
 
 public Action Timer_TryAdvert(Handle hTimer, int iUserId)
@@ -902,13 +1030,7 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	int iTeam = GetClientTeam(iClient);
 	
 	if (g_bAdvertPlaying[iClient]) {
-		if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
-			return Plugin_Continue;
-		}
-		
-		g_bAttemptingAdvert[iClient] = false;
-		g_hSpecTimer[iClient] = null;
-		return Plugin_Stop;
+		return Plugin_Continue;
 	}
 	
 	if (iTeam < 1) {
@@ -918,14 +1040,9 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	}
 	
 	if (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180) {
-		if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
-			return Plugin_Continue;
-		}
-		
-		g_bAttemptingAdvert[iClient] = false;
-		g_hSpecTimer[iClient] = null;
-		return Plugin_Stop;
+		return Plugin_Continue;
 	}
+	
 	
 	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
 		return Plugin_Continue;
@@ -941,45 +1058,6 @@ public Action Timer_TryAdvert(Handle hTimer, int iUserId)
 	
 	g_bAttemptingAdvert[iClient] = false;
 	g_hSpecTimer[iClient] = null;
-	return Plugin_Stop;
-}
-
-public Action Timer_AfterAdRequest(Handle hTimer, int iUserId)
-{
-	int iClient = GetClientOfUserId(iUserId);
-	
-	if (!IsValidClient(iClient)) {
-		return Plugin_Stop;
-	}
-	
-	if (g_bAdvertPlaying[iClient]) {
-		return Plugin_Continue;
-	}
-	
-	g_dRadioPack[iClient].Reset();
-	
-	int iDataUserId = g_dRadioPack[iClient].ReadCell();
-	
-	if (GetClientOfUserId(iDataUserId) != iClient || iDataUserId != iUserId) {
-		delete g_dRadioPack[iClient];
-		g_dRadioPack[iClient] = null;
-		g_hRadioTimer[iClient] = null;
-		
-		return Plugin_Stop;
-	}
-	
-	char szTitle[256]; char szUrl[256];
-	
-	g_dRadioPack[iClient].ReadString(szTitle, sizeof(szTitle));
-	g_dRadioPack[iClient].ReadString(szUrl, sizeof(szUrl));
-	
-	if (g_bAttemptingAdvert[iClient]) {
-		return Plugin_Continue;
-	}
-	
-	ShowVGUIPanelEx(iClient, szTitle, szUrl, MOTDPANEL_TYPE_URL, 0, false);
-	g_hRadioTimer[iClient] = null;
-	
 	return Plugin_Stop;
 }
 
@@ -1002,7 +1080,6 @@ stock bool ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = 
 	}
 	
 	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, iFlags, true, hMsg);
-	CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 	
 	g_iLastAdvertTime[iClient] = GetTime();
 	
@@ -1111,12 +1188,25 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
+	if (!g_bAdvertPlaying[iClient]) {
+		return Plugin_Stop;
+	}
+	
 	if (g_bMessages) {
 		CPrintToChat(iClient, "%s%t", PREFIX, "Advert Finished");
 	}
 	
 	g_bAdvertPlaying[iClient] = false;
-	ShowVGUIPanelEx(iClient, "Advert finished", "about:blank", MOTDPANEL_TYPE_URL, 0, false);
+	
+	if (g_bRadioResumation && !StrEqual(g_szResumeUrl[iClient], "about:blank", false) && !StrEqual(g_szResumeUrl[iClient], "", false)) {
+		ShowVGUIPanelEx(iClient, "Radio Resumation", g_szResumeUrl[iClient], MOTDPANEL_TYPE_URL, 0, false);
+	} else {
+		ShowVGUIPanelEx(iClient, "Advert finished", "about:blank", MOTDPANEL_TYPE_URL, 0, false);
+	}
+	
+	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
+	
+	g_hFinishedTimer[iClient] = null;
 	
 	return Plugin_Stop;
 }
