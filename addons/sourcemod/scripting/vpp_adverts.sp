@@ -113,6 +113,9 @@
 						- Forward VPP_OnAdvertFinished(int iClient, const char[] szRadioResumeUrl);
 						- Native BOOL VPP_PlayAdvert(int iClient) - Note to prevent spam it will delay the ad until 3 mins have passed since previous ad (If applicable)
 						- Native BOOL VPP_IsAdvertPlaying(int iClient);
+						
+			1.3.1 - 
+					- Rewrote Timer and advert logic to fix error Handle error and prevent useless handles being opened.
 					
 					
 *****************************************************************************************************
@@ -133,7 +136,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.0"
+#define PL_VERSION "1.3.1"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -213,7 +216,6 @@ char g_szResumeUrl[MAXPLAYERS + 1][256];
 	BOOLS.
 *****************************************************************************************************/
 bool g_bFirstJoin[MAXPLAYERS + 1] = false;
-bool g_bAttemptingAdvert[MAXPLAYERS + 1] = false;
 bool g_bAdvertPlaying[MAXPLAYERS + 1] = false;
 bool g_bJoinGame = false;
 bool g_bProtoBuf = false;
@@ -226,6 +228,7 @@ bool g_bImmunityEnabled = false;
 bool g_bRadioResumation = false;
 bool g_bMessages = false;
 bool g_bWaitUntilDead = false;
+bool g_bAdvertQued[MAXPLAYERS + 1] = false;
 
 /****************************************************************************************************
 	INTS.
@@ -380,7 +383,11 @@ public int Native_IsAdvertPlaying(Handle hPlugin, int iNumParams) {
 public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
 	int iClient = GetNativeCell(1);
 	
-	return CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE) != null;
+	if (HasClientFinishedAds(iClient) || g_bAdvertQued[iClient] || g_hFinishedTimer[iClient] != null) {
+		return false;
+	}
+	
+	return CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT) != null;
 }
 
 public Action OldCvarFound(int iArgs)
@@ -441,9 +448,9 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 	} else if (hConVar == g_hCvarImmunityEnabled) {
 		g_bImmunityEnabled = view_as<bool>(StringToInt(szNewValue));
 		
-		if(g_bImmunityEnabled) {
+		if (g_bImmunityEnabled) {
 			LoopValidClients(iClient) {
-				if(!CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION)) {
+				if (!CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION)) {
 					continue;
 				}
 				
@@ -631,8 +638,10 @@ public void OnClientPutInServer(int iClient)
 			delete g_hPeriodicTimer[iClient];
 		}
 		
-		g_hPeriodicTimer[iClient] = CreateTimer(g_fAdvertPeriod * 60.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+		g_hPeriodicTimer[iClient] = CreateTimer(g_fAdvertPeriod * 60.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	}
+	
+	strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 	
 	if (!g_bJoinGame) {
 		return;
@@ -640,7 +649,6 @@ public void OnClientPutInServer(int iClient)
 	
 	g_bFirstJoin[iClient] = true;
 	g_iMotdOccurence[iClient] = 0;
-	strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 }
 
 public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iPlayersNum, bool bReliable, bool bInit)
@@ -709,10 +717,10 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		if (g_bProtoBuf) {
 			if (g_iMotdOccurence[iClient] == 1) {
 				if (g_iJoinType == 2 || !IsClientAuthorized(iClient)) {
-					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					VPP_PlayAdvert(iClient);
 				} else {
-					if (!ShowAdvert(iClient, USERMSG_RELIABLE, hMsg)) {
-						CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, USERMSG_RELIABLE, true)) {
+						VPP_PlayAdvert(iClient);
 					} else {
 						if (g_hFinishedTimer[iClient] == null) {
 							g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
@@ -728,12 +736,12 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		} else {
 			switch (g_eVersion) {
 				case Engine_Left4Dead, Engine_Left4Dead2, 19: {
-					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					VPP_PlayAdvert(iClient);
 					return Plugin_Handled;
 				}
 				
 				default: {
-					CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					VPP_PlayAdvert(iClient);
 				}
 			}
 		}
@@ -773,6 +781,14 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
 		
 		g_bAdvertPlaying[iClient] = true;
+		g_iLastAdvertTime[iClient] = GetTime();
+		
+		if (!g_bFirstJoin[iClient]) {
+			g_iAdvertPlays[iClient]++;
+		}
+		
+		g_bFirstJoin[iClient] = false;
+		
 		return Plugin_Continue;
 	}
 	
@@ -864,8 +880,8 @@ public void OnClientDisconnect(int iClient)
 	g_iAdvertPlays[iClient] = 0;
 	g_iLastAdvertTime[iClient] = 0;
 	g_bFirstJoin[iClient] = false;
-	g_bAttemptingAdvert[iClient] = false;
 	g_bAdvertPlaying[iClient] = false;
+	g_bAdvertQued[iClient] = false;
 	g_iMotdOccurence[iClient] = 0;
 	
 	if (g_hPeriodicTimer[iClient] != null) {
@@ -922,39 +938,8 @@ public void Phase_Hooks(Event eEvent, char[] chEvent, bool bDontBroadcast)
 	}
 	
 	LoopValidClients(iClient) {
-		CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+		VPP_PlayAdvert(iClient);
 	}
-}
-
-public Action Timer_PeriodicAdvert(Handle hTimer, int iUserId)
-{
-	int iClient = GetClientOfUserId(iUserId);
-	
-	if (iClient <= 0 || iClient > MaxClients) {
-		return Plugin_Stop;
-	}
-	
-	if (!IsClientAuthorized(iClient)) {
-		return Plugin_Continue;
-	}
-	
-	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0 && g_iDeathAdCount <= 0) {
-		return Plugin_Continue;
-	}
-	
-	if (IsClientImmune(iClient)) {
-		return Plugin_Stop;
-	}
-	
-	if (g_bAttemptingAdvert[iClient] || g_hSpecTimer[iClient] != null) {
-		return Plugin_Continue;
-	}
-	
-	CreateTimer(0.0, Timer_TryAdvert, GetClientUserId(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	
-	g_bAttemptingAdvert[iClient] = true;
-	
-	return Plugin_Continue;
 }
 
 public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast)
@@ -968,7 +953,7 @@ public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast
 	}
 	
 	if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
-		CreateTimer(0.0, Timer_TryAdvert, GetClientUserId(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+		VPP_PlayAdvert(iClient);
 	} else if (g_hSpecTimer[iClient] != null) {
 		CloseHandle(g_hSpecTimer[iClient]);
 		g_hSpecTimer[iClient] = null;
@@ -988,82 +973,90 @@ public void Event_PlayerDeath(Event evEvent, char[] szEvent, bool bDontBroadcast
 	
 	if (g_iDeathAdCount > 0) {
 		if (iDeathCount % g_iDeathAdCount == 0) {
-			CreateTimer(0.0, Timer_PeriodicAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+			VPP_PlayAdvert(iClient);
 		}
 	}
 }
 
-public Action Timer_TryAdvert(Handle hTimer, int iUserId)
+public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 {
 	int iClient = GetClientOfUserId(iUserId);
 	
 	if (!IsValidClient(iClient)) {
-		g_bAttemptingAdvert[iClient] = false;
-		g_hSpecTimer[iClient] = null;
+		if (iClient > -1) {
+			if (hTimer == g_hSpecTimer[iClient]) {
+				g_hSpecTimer[iClient] = null;
+			} else if (hTimer == g_hPeriodicTimer[iClient]) {
+				g_hPeriodicTimer[iClient] = null;
+			}
+		}
+		
 		return Plugin_Stop;
 	}
 	
-	if (!IsClientAuthorized(iClient)) {
+	if (HasClientFinishedAds(iClient)) {
+		if (hTimer == g_hSpecTimer[iClient]) {
+			g_hSpecTimer[iClient] = null;
+		} else if (hTimer == g_hPeriodicTimer[iClient]) {
+			g_hPeriodicTimer[iClient] = null;
+		}
+		
+		return Plugin_Stop;
+	}
+	
+	if(g_bAdvertPlaying[iClient] || g_hFinishedTimer[iClient] != null) {
+		if (hTimer == g_hSpecTimer[iClient] || hTimer == g_hPeriodicTimer[iClient]) {
+			return Plugin_Continue;
+		}
+		
+		return Plugin_Stop;
+	}
+	
+	if (AdShouldWait(iClient)) {
+		g_bAdvertQued[iClient] = hTimer != g_hSpecTimer[iClient] && hTimer != g_hPeriodicTimer[iClient];
+		
+		if(!g_bAdvertQued[iClient]) {
+			VPP_PlayAdvert(iClient);
+		}
+		
 		return Plugin_Continue;
 	}
 	
 	if (IsClientImmune(iClient)) {
-		g_bAttemptingAdvert[iClient] = false;
-		g_hSpecTimer[iClient] = null;
-		return Plugin_Stop;
-	}
-	
-	if (g_iAdvertTotal <= -1 && !g_bFirstJoin[iClient]) {
-		g_bAttemptingAdvert[iClient] = false;
-		g_hSpecTimer[iClient] = null;
-		return Plugin_Stop;
-	}
-	
-	if (g_iAdvertTotal > 0 && !g_bFirstJoin[iClient]) {
-		if (g_iAdvertPlays[iClient] >= g_iAdvertTotal) {
-			g_bAttemptingAdvert[iClient] = false;
+		if (hTimer == g_hSpecTimer[iClient]) {
 			g_hSpecTimer[iClient] = null;
-			return Plugin_Stop;
+		} else if (hTimer == g_hPeriodicTimer[iClient]) {
+			g_hPeriodicTimer[iClient] = null;
 		}
+		
+		return Plugin_Stop;
 	}
+	
+	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, USERMSG_RELIABLE, true);
 	
 	int iTeam = GetClientTeam(iClient);
 	
-	if (g_bAdvertPlaying[iClient]) {
+	if (hTimer == g_hPeriodicTimer[iClient]) {
 		return Plugin_Continue;
-	}
-	
-	if (iTeam < 1) {
-		if (g_eVersion == Engine_DODS || (g_bFirstJoin[iClient] && g_iJoinType == 2)) {
-			return Plugin_Continue;
-		}
-	}
-	
-	if (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180) {
-		return Plugin_Continue;
-	}
-	
-	
-	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
-		return Plugin_Continue;
-	}
-	
-	if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
+	} else if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
 		if (g_hSpecTimer[iClient] == null) {
-			g_hSpecTimer[iClient] = CreateTimer(g_fSpecAdvertPeriod * 60.0, Timer_TryAdvert, iUserId, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_hSpecTimer[iClient] = CreateTimer(g_fSpecAdvertPeriod * 60.0, Timer_PlayAdvert, iUserId, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
+		
+		return Plugin_Continue;
+		
+	} else if (iTeam != 1 && g_hSpecTimer[iClient] != null && hTimer != g_hSpecTimer[iClient]) {
+		delete g_hSpecTimer[iClient];
 	}
 	
-	ShowAdvert(iClient, USERMSG_RELIABLE);
-	
-	g_bAttemptingAdvert[iClient] = false;
-	g_hSpecTimer[iClient] = null;
 	return Plugin_Stop;
 }
 
-stock bool ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = null)
+stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = USERMSG_RELIABLE, bool bShow = true, Handle hMsg = null)
 {
-	if (!IsClientAuthorized(iClient) || g_bAdvertPlaying[iClient] || IsClientImmune(iClient) || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
+	g_bAdvertQued[iClient] = false;
+	
+	if (AdShouldWait(iClient) || HasClientFinishedAds(iClient) || IsClientImmune(iClient)) {
 		return false;
 	}
 	
@@ -1079,21 +1072,6 @@ stock bool ShowAdvert(int iClient, int iFlags = USERMSG_RELIABLE, Handle hMsg = 
 		FakeClientCommandEx(iClient, "joingame");
 	}
 	
-	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, iFlags, true, hMsg);
-	
-	g_iLastAdvertTime[iClient] = GetTime();
-	
-	if (!g_bFirstJoin[iClient]) {
-		g_iAdvertPlays[iClient]++;
-	}
-	
-	g_bFirstJoin[iClient] = false;
-	
-	return true;
-}
-
-stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = USERMSG_RELIABLE, bool bShow = true, Handle hMsg = null)
-{
 	KeyValues hKv = CreateKeyValues("data");
 	
 	hKv.SetString("title", szTitle);
@@ -1161,6 +1139,8 @@ stock void ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	}
 	
 	delete hKv;
+	
+	return true;
 }
 
 public void Query_MotdCheck(QueryCookie qCookie, int iClient, ConVarQueryResult cqResult, const char[] szCvarName, const char[] szCvarValue)
@@ -1230,11 +1210,15 @@ stock bool IsValidClient(int iClient)
 
 stock bool IsClientImmune(int iClient)
 {
-	if (!g_bImmunityEnabled) {
-		return false;
+	if (IsClientAuthorized(iClient)) {
+		return true;
 	}
 	
-	return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
+	if (g_bImmunityEnabled) {
+		return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
+	}
+	
+	return false;
 }
 
 stock bool CheckGameSpecificConditions()
@@ -1243,6 +1227,46 @@ stock bool CheckGameSpecificConditions()
 		if (GameRules_GetProp("m_bWarmupPeriod") == 1) {
 			return true;
 		}
+	}
+	
+	return false;
+}
+
+stock bool AdShouldWait(int iClient)
+{
+	if (!IsClientAuthorized(iClient)) {
+		return true;
+	}
+	
+	int iTeam = GetClientTeam(iClient);
+	
+	if (iTeam < 1 && (g_eVersion == Engine_DODS || (g_bFirstJoin[iClient] && g_iJoinType == 2))) {
+		return true;
+	}
+	
+	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
+		return true;
+	}
+	
+	if (g_bAdvertPlaying[iClient] || g_hSpecTimer[iClient] != null || g_hFinishedTimer[iClient] != null || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
+		return true;
+	}
+	
+	return false;
+}
+
+stock bool HasClientFinishedAds(int iClient)
+{
+	if (g_iAdvertTotal > 0 && !g_bFirstJoin[iClient] && g_iAdvertPlays[iClient] >= g_iAdvertTotal) {
+		return true;
+	}
+	
+	if (g_iAdvertTotal <= -1 && !g_bFirstJoin[iClient]) {
+		return true;
+	}
+	
+	if (!g_bFirstJoin[iClient] && g_fAdvertPeriod <= 0.0 && g_iDeathAdCount <= 0) {
+		return true;
 	}
 	
 	return false;
