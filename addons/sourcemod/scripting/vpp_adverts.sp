@@ -115,7 +115,11 @@
 						- Native BOOL VPP_IsAdvertPlaying(int iClient);
 						
 			1.3.1 - 
-					- Rewrote Timer and advert logic to fix error Handle error and prevent useless handles being opened.
+					- Rewrote Timer and advert logic to fix error and prevent useless handles being opened.
+			1.3.2 - 
+					- Fixed a missing ! which caused ads not to be played and nested the if statement.
+					- Removed useless check which might of caused spectator ads not to play.
+					- Fixed a bug where a new UserMessage was being created inside the hook instead of overriding the existing one.
 					
 					
 *****************************************************************************************************
@@ -136,7 +140,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.1"
+#define PL_VERSION "1.3.2"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -719,7 +723,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 				if (g_iJoinType == 2 || !IsClientAuthorized(iClient)) {
 					VPP_PlayAdvert(iClient);
 				} else {
-					if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, USERMSG_RELIABLE, true)) {
+					if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
 						VPP_PlayAdvert(iClient);
 					} else {
 						if (g_hFinishedTimer[iClient] == null) {
@@ -1004,7 +1008,7 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	if(g_bAdvertPlaying[iClient] || g_hFinishedTimer[iClient] != null) {
+	if (g_bAdvertPlaying[iClient] || g_hFinishedTimer[iClient] != null) {
 		if (hTimer == g_hSpecTimer[iClient] || hTimer == g_hPeriodicTimer[iClient]) {
 			return Plugin_Continue;
 		}
@@ -1015,7 +1019,7 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	if (AdShouldWait(iClient)) {
 		g_bAdvertQued[iClient] = hTimer != g_hSpecTimer[iClient] && hTimer != g_hPeriodicTimer[iClient];
 		
-		if(!g_bAdvertQued[iClient]) {
+		if (!g_bAdvertQued[iClient]) {
 			VPP_PlayAdvert(iClient);
 		}
 		
@@ -1032,7 +1036,7 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, USERMSG_RELIABLE, true);
+	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, _, true);
 	
 	int iTeam = GetClientTeam(iClient);
 	
@@ -1052,7 +1056,7 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	return Plugin_Stop;
 }
 
-stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = USERMSG_RELIABLE, bool bShow = true, Handle hMsg = null)
+stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null)
 {
 	g_bAdvertQued[iClient] = false;
 	
@@ -1210,11 +1214,11 @@ stock bool IsValidClient(int iClient)
 
 stock bool IsClientImmune(int iClient)
 {
-	if (IsClientAuthorized(iClient)) {
-		return true;
-	}
-	
 	if (g_bImmunityEnabled) {
+		if (!IsClientAuthorized(iClient)) {
+			return true;
+		}
+		
 		return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
 	}
 	
@@ -1248,7 +1252,7 @@ stock bool AdShouldWait(int iClient)
 		return true;
 	}
 	
-	if (g_bAdvertPlaying[iClient] || g_hSpecTimer[iClient] != null || g_hFinishedTimer[iClient] != null || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
+	if (g_bAdvertPlaying[iClient] || g_hFinishedTimer[iClient] != null || (g_iLastAdvertTime[iClient] > 0 && GetTime() - g_iLastAdvertTime[iClient] < 180)) {
 		return true;
 	}
 	
