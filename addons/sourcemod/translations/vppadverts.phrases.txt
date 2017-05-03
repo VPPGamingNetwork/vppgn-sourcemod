@@ -27,7 +27,7 @@
 	"Reload Success"
 	{
 		"en" "Reloaded successfully."
-		"pl" "Załadowano ponownie z skutkiem pozytywnym."
+		"pl" "Załadowano pomyślnie."
 	}
 	
 	"Reload Failed"
@@ -41,7 +41,7 @@
 		"#format" "{1:d}"
 
 		"en" "{1} Radio stations loaded."
-		"pl" "{1} stacji radiowych zostało załadowane."
+		"pl" "{1} stacji radiowych zostało załadowanych."
 	}
 	
 	"Menu_Title"
@@ -54,22 +54,22 @@
 	"Menu_Phrase_0"
 	{
 		"#format"	""
-		"en"		"Please enable them to help support this server."
-		"pl"		"Proszę, aby umożliwić im pomoc w obsłudze tego serwera."
+		"en"		"Please enable it to help support this server."
+		"pl"		"Proszę, włącz to. Pomoże to wspierać nasz serwer"
 	}
 	
 	"Menu_Phrase_1"
 	{
 		"#format"	""
 		"en"		"- Type cl_disablehtmlmotd 0 into console."
-		"en"		"- Wpisz polecenie cl_disablehtmlmotd 0 do konsoli."
+		"pl"		"- Wpisz polecenie cl_disablehtmlmotd 0 do konsoli."
 	}
 
 	"Menu_Phrase_2"
 	{
 		"#format"	""
 		"en"		"After you have done this, the notification will stop appearing."
-		"pl"		"Po wykonaniu tej czynności powiadomienie przestanie się pojawiać."
+		"pl"		"Po wykonaniu tej czynności powiadomienia zostaną wyłączone."
 	}
 
 	"Menu_Phrase_Exit"

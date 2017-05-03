@@ -10,7 +10,10 @@
 		
 		"Notes"	"Fixed invalid handle error spam."
 		"Notes"	"Improved check before serving ad to make sure client is properly authorized and immunity checks are accurate."
-		"Notes"	"Removed kicking to prevent issues with Valve, replaced it with a hint instead which can be controlled with sm_vpp_notifymotd."
+		"Notes"	"Added notify option to as an alternative to kicking player for having html motd disabled, sm_vpp_kickmotd 1 = Kick, 2 = Notify, 0 = Do nothing."
+		"Notes"	"Added min and max values to cvars and decreased default advert interval from 15 to 5 mins."
+		"Notes"	"Increased advert play time to 60 seconds to improve completion rates."
+		"Notes"	"Removed redirect to about:blank after advert as its now broken due to a CSGO update (and was not too important anyway)."
 	}
 	
 	"Files"

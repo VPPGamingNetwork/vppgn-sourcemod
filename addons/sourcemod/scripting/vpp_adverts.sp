@@ -123,7 +123,10 @@
 			1.3.3 - 
 					- Fixed invalid handle error spam.
 					- Improved check before serving ad to make sure client is properly authorized and immunity checks are accurate.
-					- Removed kicking to prevent issues with Valve, replaced it with a hint instead which can be controlled with sm_vpp_notifymotd.
+					- Added notify option to as an alternative to kicking player for having html motd disabled, sm_vpp_kickmotd 1 = Kick, 2 = Notify, 0 = Do nothing.
+					- Added min and max values to cvars and decreased default advert interval from 15 to 5 mins.
+					- Increased advert play time to 60 seconds to improve completion rates.
+					- Removed redirect to about:blank after advert as its now broken due to a CSGO update (and was not too important anyway).
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -174,7 +177,7 @@ ConVar g_hCvarAdvertPeriod = null;
 ConVar g_hCvarImmunityEnabled = null;
 ConVar g_hCvarAdvertTotal = null;
 ConVar g_hCvarPhaseAds = null;
-ConVar g_hCvarNotifyMotd = null;
+ConVar g_hCvarMotdCheck = null;
 ConVar g_hCvarSpecAdvertPeriod = null;
 ConVar g_hCvarRadioResumation = null;
 ConVar g_hCvarMessages = null;
@@ -236,7 +239,6 @@ bool g_bImmunityEnabled = false;
 bool g_bRadioResumation = false;
 bool g_bMessages = false;
 bool g_bWaitUntilDead = false;
-bool g_bNotifyMotd = false;
 bool g_bAdvertQued[MAXPLAYERS + 1] = false;
 bool g_bMotdDisabled[MAXPLAYERS + 1] = false;
 
@@ -249,6 +251,7 @@ int g_iLastAdvertTime[MAXPLAYERS + 1] = 0;
 int g_iJoinType = 1;
 int g_iMotdOccurence[MAXPLAYERS + 1] = 0;
 int g_iDeathAdCount = 0;
+int g_iMotdAction = 0;
 
 /****************************************************************************************************
 	FLOATS.
@@ -300,40 +303,40 @@ public void OnPluginStart()
 	g_hAdvertUrl = AutoExecConfig_CreateConVar("sm_vpp_url", "", "Put your VPP Advert Link here");
 	g_hAdvertUrl.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join?, 0 = Disabled.");
+	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join?, 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarJoinGame.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "15", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.");
+	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "5", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.", _, true, 3.0);
 	g_hCvarAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.");
+	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.", _, true, 3.0);
 	g_hCvarSpecAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.");
+	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "0", "Play an advert every time somebody dies this many times, 0 = Disabled.");
+	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "0", "Play an advert every time somebody dies this many times, 0 = Disabled.", _, true, 0.0);
 	g_hCvarDeathAds.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.");
+	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.", _, true, -1.0);
 	g_hCvarAdvertTotal.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Reservation Flag)");
+	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Reservation Flag)", _, true, 0.0, true, 1.0);
 	g_hCvarImmunityEnabled.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarNotifyMotd = AutoExecConfig_CreateConVar("sm_vpp_notifymotd", "0", "1 = Display notifications to players who have html motd disabled, 0 = Disabled.");
-	g_hCvarNotifyMotd.AddChangeHook(OnCvarChanged);
+	g_hCvarMotdCheck = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Action for player with html motd disabled, 0 = Disabled, 1 = Kick Player, 2 = Display notifications.", _, true, 0.0, true, 2.0);
+	g_hCvarMotdCheck.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarRadioResumation = AutoExecConfig_CreateConVar("sm_vpp_radio_resumation", "1", "Resume Radio after advertisement finishes, 0 = Disabled.");
+	g_hCvarRadioResumation = AutoExecConfig_CreateConVar("sm_vpp_radio_resumation", "1", "Resume Radio after advertisement finishes, 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarRadioResumation.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarMessages = AutoExecConfig_CreateConVar("sm_vpp_messages", "1", "Show messages to clients, 0 = Disabled.");
+	g_hCvarMessages = AutoExecConfig_CreateConVar("sm_vpp_messages", "1", "Show messages to clients, 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarMessages.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarJoinType = AutoExecConfig_CreateConVar("sm_vpp_onjoin_type", "1", "2 = Wait for team join, If you have issues with method 1 then set this to method 2, It defaults at 1, in most cases you should leave this at 1.", _, true, 1.0, true, 2.0);
 	g_hCvarJoinType.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarWaitUntilDead = AutoExecConfig_CreateConVar("sm_vpp_wait_until_dead", "0", "Wait until player is dead (Except first join) 0 = Disabled.");
+	g_hCvarWaitUntilDead = AutoExecConfig_CreateConVar("sm_vpp_wait_until_dead", "0", "Wait until player is dead (Except first join) 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarWaitUntilDead.AddChangeHook(OnCvarChanged);
 	
 	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
@@ -366,7 +369,6 @@ public void OnPluginStart()
 	
 	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
-	RegServerCmd("sm_vpp_kickmotd", OldCvarFound, "Outdated cvar, please update your config.");
 	
 	LoopValidClients(iClient) {
 		OnClientPutInServer(iClient); g_bFirstJoin[iClient] = false;
@@ -400,9 +402,13 @@ public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
 		return false;
 	}
 	
-	QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, true);
+	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, true) < view_as<QueryCookie>(0)) {  }
 	
-	return true;
+	if(!IsClientConnected(iClient)) {
+		return false;
+	}
+	
+	return !g_bMotdDisabled[iClient];
 }
 
 public Action OldCvarFound(int iArgs)
@@ -423,10 +429,6 @@ public Action OldCvarFound(int iArgs)
 		LogError("======================[sm_vpp_ad_grace]======================");
 		LogError("sm_vpp_ad_grace no longer exists and the cvar is now unused.");
 		LogError("You can simply use the other cvars to control when how often ads are played, But a 3 min cooldown between each ad is always enforced.\n");
-	} else if (StrEqual(szCvarName, "sm_vpp_kickmotd", false)) {
-		LogError("======================[sm_vpp_kickmotd]======================");
-		LogError("sm_vpp_kickmotd no longer exists and the cvar is now unused in order to prevent issues with Valve.");
-		LogError("You can use sm_vpp_notifymotd to give a notification to players instead of kicking them.\n");
 	}
 	
 	LogError("After you have acknowledged the above message(s) and updated your config, you may completely remove the cvars to prevent this message displaying again.");
@@ -492,8 +494,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_iJoinType = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarDeathAds) {
 		g_iDeathAdCount = StringToInt(szNewValue);
-	} else if (hConVar == g_hCvarNotifyMotd) {
-		g_bNotifyMotd = view_as<bool>(StringToInt(szNewValue));
+	} else if (hConVar == g_hCvarMotdCheck) {
+		g_iMotdAction = StringToInt(szNewValue);
 	}
 }
 
@@ -509,7 +511,7 @@ public void UpdateConVars()
 	g_bRadioResumation = g_hCvarRadioResumation.BoolValue;
 	g_bWaitUntilDead = g_hCvarWaitUntilDead.BoolValue;
 	g_bMessages = g_hCvarMessages.BoolValue;
-	g_bNotifyMotd = g_hCvarNotifyMotd.BoolValue;
+	g_iMotdAction = g_hCvarMotdCheck.IntValue;
 	g_iJoinType = g_hCvarJoinType.IntValue;
 	
 	g_fAdvertPeriod = g_hCvarAdvertPeriod.FloatValue;
@@ -743,7 +745,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 						VPP_PlayAdvert(iClient);
 					} else {
 						if (g_hFinishedTimer[iClient] == null) {
-							g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+							g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 						}
 						
 						RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
@@ -1088,6 +1090,10 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	
 	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, false) < view_as<QueryCookie>(0)) {  }
 	
+	if(!IsClientConnected(iClient)) {
+		return false;
+	}
+	
 	if (g_bMotdDisabled[iClient]) {
 		return false;
 	}
@@ -1180,10 +1186,13 @@ public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult
 	}
 	
 	if (StringToInt(szCvarValue) > 0) {
-		if (g_bNotifyMotd) {
+		g_bMotdDisabled[iClient] = true;
+		
+		if(g_iMotdAction == 1) {
+			KickClient(iClient, "%t", "Kick Message");
+		} else if (g_iMotdAction == 2) {
 			PrintHintText(iClient, "%t", "Menu_Title");
 			g_mMenuWarning.Display(iClient, 10);
-			g_bMotdDisabled[iClient] = true;
 		}
 	} else {
 		if (!g_bFirstJoin[iClient] && bPlayAd) {
@@ -1246,8 +1255,6 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	
 	if (g_bRadioResumation && !StrEqual(g_szResumeUrl[iClient], "about:blank", false) && !StrEqual(g_szResumeUrl[iClient], "", false)) {
 		ShowVGUIPanelEx(iClient, "Radio Resumation", g_szResumeUrl[iClient], MOTDPANEL_TYPE_URL, 0, false);
-	} else {
-		ShowVGUIPanelEx(iClient, "Advert finished", "about:blank", MOTDPANEL_TYPE_URL, 0, false);
 	}
 	
 	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
