@@ -492,7 +492,7 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_iJoinType = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarDeathAds) {
 		g_iDeathAdCount = StringToInt(szNewValue);
-	} else if(hConVar == g_hCvarNotifyMotd) {
+	} else if (hConVar == g_hCvarNotifyMotd) {
 		g_bNotifyMotd = view_as<bool>(StringToInt(szNewValue));
 	}
 }
@@ -903,19 +903,19 @@ public void OnClientDisconnect(int iClient)
 	g_bAdvertQued[iClient] = false;
 	g_iMotdOccurence[iClient] = 0;
 	
-	if (g_hPeriodicTimer[iClient] != null) {
+	if (g_hPeriodicTimer[iClient] != null && IsValidHandle(g_hPeriodicTimer[iClient])) {
 		delete g_hPeriodicTimer[iClient];
 	}
 	
 	g_hPeriodicTimer[iClient] = null;
 	
-	if (g_hFinishedTimer[iClient] != null) {
+	if (g_hFinishedTimer[iClient] != null && IsValidHandle(g_hPeriodicTimer[iClient])) {
 		delete g_hFinishedTimer[iClient];
 	}
 	
 	g_hFinishedTimer[iClient] = null;
 	
-	if (g_hSpecTimer[iClient] != null) {
+	if (g_hSpecTimer[iClient] != null && IsValidHandle(g_hPeriodicTimer[iClient])) {
 		delete g_hSpecTimer[iClient];
 	}
 	
@@ -1015,6 +1015,11 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	int iClient = GetClientOfUserId(iUserId);
 	
 	if (!IsValidClient(iClient)) {
+		if (iClient > -1 && iClient <= MaxClients) {
+			g_hSpecTimer[iClient] = null;
+			g_hPeriodicTimer[iClient] = null;
+		}
+		
 		return Plugin_Stop;
 	}
 	
@@ -1083,7 +1088,7 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	
 	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, false) < view_as<QueryCookie>(0)) {  }
 	
-	if(g_bMotdDisabled[iClient]) {
+	if (g_bMotdDisabled[iClient]) {
 		return false;
 	}
 	
@@ -1175,13 +1180,13 @@ public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult
 	}
 	
 	if (StringToInt(szCvarValue) > 0) {
-		if(g_bNotifyMotd) {
+		if (g_bNotifyMotd) {
 			PrintHintText(iClient, "%t", "Menu_Title");
 			g_mMenuWarning.Display(iClient, 10);
 			g_bMotdDisabled[iClient] = true;
 		}
 	} else {
-		if(!g_bFirstJoin[iClient] && bPlayAd) {
+		if (!g_bFirstJoin[iClient] && bPlayAd) {
 			CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
 		
@@ -1219,7 +1224,7 @@ public void CreateMotdMenu()
 	g_mMenuWarning.AddItem("0", szBuffer);
 }
 
-public int MenuHandler(Menu mMenu, MenuAction maAction, int iParam1, int iParam2){}
+public int MenuHandler(Menu mMenu, MenuAction maAction, int iParam1, int iParam2) {  }
 
 public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 {
