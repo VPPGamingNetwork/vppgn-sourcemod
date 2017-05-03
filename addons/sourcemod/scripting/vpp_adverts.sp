@@ -120,7 +120,10 @@
 					- Fixed a missing ! which caused ads not to be played and nested the if statement.
 					- Removed useless check which might of caused spectator ads not to play.
 					- Fixed a bug where a new UserMessage was being created inside the hook instead of overriding the existing one.
-					
+			1.3.3 - 
+					- Fixed invalid handle error spam.
+					- Improved check before serving ad to make sure client is properly authorized and immunity checks are accurate.
+					- Removed kicking to prevent issues with Valve, replaced it with a hint instead which can be controlled with sm_vpp_notifymotd.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -140,7 +143,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.2"
+#define PL_VERSION "1.3.3"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -171,7 +174,7 @@ ConVar g_hCvarAdvertPeriod = null;
 ConVar g_hCvarImmunityEnabled = null;
 ConVar g_hCvarAdvertTotal = null;
 ConVar g_hCvarPhaseAds = null;
-ConVar g_hCvarKickMotd = null;
+ConVar g_hCvarNotifyMotd = null;
 ConVar g_hCvarSpecAdvertPeriod = null;
 ConVar g_hCvarRadioResumation = null;
 ConVar g_hCvarMessages = null;
@@ -184,6 +187,8 @@ Handle g_hSpecTimer[MAXPLAYERS + 1] = null;
 Handle g_hPeriodicTimer[MAXPLAYERS + 1] = null;
 Handle g_hOnAdvertStarted = null;
 Handle g_hOnAdvertFinished = null;
+
+Menu g_mMenuWarning = null;
 
 ArrayList g_alRadioStations = null;
 EngineVersion g_eVersion = Engine_Unknown;
@@ -224,7 +229,6 @@ bool g_bAdvertPlaying[MAXPLAYERS + 1] = false;
 bool g_bJoinGame = false;
 bool g_bProtoBuf = false;
 bool g_bPhaseAds = false;
-bool g_bKickMotd = false;
 bool g_bPhase = false;
 bool g_bGameTested = false;
 bool g_bForceJoinGame = false;
@@ -232,7 +236,9 @@ bool g_bImmunityEnabled = false;
 bool g_bRadioResumation = false;
 bool g_bMessages = false;
 bool g_bWaitUntilDead = false;
+bool g_bNotifyMotd = false;
 bool g_bAdvertQued[MAXPLAYERS + 1] = false;
+bool g_bMotdDisabled[MAXPLAYERS + 1] = false;
 
 /****************************************************************************************************
 	INTS.
@@ -315,8 +321,8 @@ public void OnPluginStart()
 	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Reservation Flag)");
 	g_hCvarImmunityEnabled.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarKickMotd = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Kick players with motd disabled? (Immune players are ignored), 0 = Disabled.");
-	g_hCvarKickMotd.AddChangeHook(OnCvarChanged);
+	g_hCvarNotifyMotd = AutoExecConfig_CreateConVar("sm_vpp_notifymotd", "0", "1 = Display notifications to players who have html motd disabled, 0 = Disabled.");
+	g_hCvarNotifyMotd.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarRadioResumation = AutoExecConfig_CreateConVar("sm_vpp_radio_resumation", "1", "Resume Radio after advertisement finishes, 0 = Disabled.");
 	g_hCvarRadioResumation.AddChangeHook(OnCvarChanged);
@@ -360,6 +366,7 @@ public void OnPluginStart()
 	
 	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
+	RegServerCmd("sm_vpp_kickmotd", OldCvarFound, "Outdated cvar, please update your config.");
 	
 	LoopValidClients(iClient) {
 		OnClientPutInServer(iClient); g_bFirstJoin[iClient] = false;
@@ -367,6 +374,8 @@ public void OnPluginStart()
 	
 	g_hOnAdvertStarted = CreateGlobalForward("VPP_OnAdvertStarted", ET_Ignore, Param_Cell, Param_String);
 	g_hOnAdvertFinished = CreateGlobalForward("VPP_OnAdvertFinished", ET_Ignore, Param_Cell, Param_String);
+	
+	CreateMotdMenu();
 }
 
 public APLRes AskPluginLoad2(Handle hNyself, bool bLate, char[] chError, int iErrMax)
@@ -391,7 +400,9 @@ public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
 		return false;
 	}
 	
-	return CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT) != null;
+	QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, true);
+	
+	return true;
 }
 
 public Action OldCvarFound(int iArgs)
@@ -412,9 +423,13 @@ public Action OldCvarFound(int iArgs)
 		LogError("======================[sm_vpp_ad_grace]======================");
 		LogError("sm_vpp_ad_grace no longer exists and the cvar is now unused.");
 		LogError("You can simply use the other cvars to control when how often ads are played, But a 3 min cooldown between each ad is always enforced.\n");
+	} else if (StrEqual(szCvarName, "sm_vpp_kickmotd", false)) {
+		LogError("======================[sm_vpp_kickmotd]======================");
+		LogError("sm_vpp_kickmotd no longer exists and the cvar is now unused in order to prevent issues with Valve.");
+		LogError("You can use sm_vpp_notifymotd to give a notification to players instead of kicking them.\n");
 	}
 	
-	LogError("After you have acknowledged the above messages and updated your config, you may completely remove the cvars to prevent this message displaying again.");
+	LogError("After you have acknowledged the above message(s) and updated your config, you may completely remove the cvars to prevent this message displaying again.");
 	
 	return Plugin_Handled;
 }
@@ -461,8 +476,6 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 				OnClientPutInServer(iClient);
 			}
 		}
-	} else if (hConVar == g_hCvarKickMotd) {
-		g_bKickMotd = view_as<bool>(StringToInt(szNewValue));
 	} else if (hConVar == g_hCvarSpecAdvertPeriod) {
 		g_fSpecAdvertPeriod = StringToFloat(szNewValue);
 		
@@ -479,6 +492,8 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_iJoinType = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarDeathAds) {
 		g_iDeathAdCount = StringToInt(szNewValue);
+	} else if(hConVar == g_hCvarNotifyMotd) {
+		g_bNotifyMotd = view_as<bool>(StringToInt(szNewValue));
 	}
 }
 
@@ -489,12 +504,12 @@ public void OnConfigsExecuted() {
 public void UpdateConVars()
 {
 	g_bJoinGame = g_hCvarJoinGame.BoolValue;
-	g_bKickMotd = g_hCvarKickMotd.BoolValue;
 	g_bPhaseAds = g_hCvarPhaseAds.BoolValue;
 	g_bImmunityEnabled = g_hCvarImmunityEnabled.BoolValue;
 	g_bRadioResumation = g_hCvarRadioResumation.BoolValue;
 	g_bWaitUntilDead = g_hCvarWaitUntilDead.BoolValue;
 	g_bMessages = g_hCvarMessages.BoolValue;
+	g_bNotifyMotd = g_hCvarNotifyMotd.BoolValue;
 	g_iJoinType = g_hCvarJoinType.IntValue;
 	
 	g_fAdvertPeriod = g_hCvarAdvertPeriod.FloatValue;
@@ -642,7 +657,7 @@ public void OnClientPutInServer(int iClient)
 			delete g_hPeriodicTimer[iClient];
 		}
 		
-		g_hPeriodicTimer[iClient] = CreateTimer(g_fAdvertPeriod * 60.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+		g_hPeriodicTimer[iClient] = CreateTimer(g_fAdvertPeriod * 60.0, Timer_IntervalAd, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	}
 	
 	strcopy(g_szResumeUrl[iClient], 128, "about:blank");
@@ -718,9 +733,10 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (StrEqual(szUrl, "motd")) {
+		
 		if (g_bProtoBuf) {
 			if (g_iMotdOccurence[iClient] == 1) {
-				if (g_iJoinType == 2 || !IsClientAuthorized(iClient)) {
+				if (g_iJoinType == 2 || AdShouldWait(iClient) || g_bMotdDisabled[iClient]) {
 					VPP_PlayAdvert(iClient);
 				} else {
 					if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
@@ -785,7 +801,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
 		
 		g_bAdvertPlaying[iClient] = true;
-		g_iLastAdvertTime[iClient] = GetTime();
 		
 		if (!g_bFirstJoin[iClient]) {
 			g_iAdvertPlays[iClient]++;
@@ -901,7 +916,7 @@ public void OnClientDisconnect(int iClient)
 	g_hFinishedTimer[iClient] = null;
 	
 	if (g_hSpecTimer[iClient] != null) {
-		delete g_hFinishedTimer[iClient];
+		delete g_hSpecTimer[iClient];
 	}
 	
 	g_hSpecTimer[iClient] = null;
@@ -959,8 +974,7 @@ public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast
 	if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
 		VPP_PlayAdvert(iClient);
 	} else if (g_hSpecTimer[iClient] != null) {
-		CloseHandle(g_hSpecTimer[iClient]);
-		g_hSpecTimer[iClient] = null;
+		delete g_hSpecTimer[iClient];
 	}
 	
 	return Plugin_Continue;
@@ -982,19 +996,25 @@ public void Event_PlayerDeath(Event evEvent, char[] szEvent, bool bDontBroadcast
 	}
 }
 
+public Action Timer_IntervalAd(Handle hTimer, int iUserId)
+{
+	int iClient = GetClientOfUserId(iUserId);
+	
+	if (!IsValidClient(iClient)) {
+		return Plugin_Stop;
+	}
+	
+	VPP_PlayAdvert(iClient);
+	
+	return Plugin_Stop;
+	
+}
+
 public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 {
 	int iClient = GetClientOfUserId(iUserId);
 	
 	if (!IsValidClient(iClient)) {
-		if (iClient > -1) {
-			if (hTimer == g_hSpecTimer[iClient]) {
-				g_hSpecTimer[iClient] = null;
-			} else if (hTimer == g_hPeriodicTimer[iClient]) {
-				g_hPeriodicTimer[iClient] = null;
-			}
-		}
-		
 		return Plugin_Stop;
 	}
 	
@@ -1027,11 +1047,8 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	}
 	
 	if (IsClientImmune(iClient)) {
-		if (hTimer == g_hSpecTimer[iClient]) {
-			g_hSpecTimer[iClient] = null;
-		} else if (hTimer == g_hPeriodicTimer[iClient]) {
-			g_hPeriodicTimer[iClient] = null;
-		}
+		g_hSpecTimer[iClient] = null;
+		g_hPeriodicTimer[iClient] = null;
 		
 		return Plugin_Stop;
 	}
@@ -1064,9 +1081,9 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 		return false;
 	}
 	
-	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdCheck) < view_as<QueryCookie>(0)) {  }
+	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, false) < view_as<QueryCookie>(0)) {  }
 	
-	if (!IsValidClient(iClient)) {
+	if(g_bMotdDisabled[iClient]) {
 		return false;
 	}
 	
@@ -1147,22 +1164,62 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	return true;
 }
 
-public void Query_MotdCheck(QueryCookie qCookie, int iClient, ConVarQueryResult cqResult, const char[] szCvarName, const char[] szCvarValue)
+public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult cqResult, const char[] szCvarName, const char[] szCvarValue, bool bPlayAd)
 {
-	if (cqResult != ConVarQuery_Okay) {
-		return;
-	}
-	
 	if (!IsValidClient(iClient)) {
 		return;
 	}
 	
+	if (IsClientImmune(iClient)) {
+		return;
+	}
+	
 	if (StringToInt(szCvarValue) > 0) {
-		if (g_bKickMotd && !IsClientImmune(iClient)) {
-			KickClient(iClient, "%t", "Kick Message");
+		if(g_bNotifyMotd) {
+			PrintHintText(iClient, "%t", "Menu_Title");
+			g_mMenuWarning.Display(iClient, 10);
+			g_bMotdDisabled[iClient] = true;
 		}
+	} else {
+		if(!g_bFirstJoin[iClient] && bPlayAd) {
+			CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
+		}
+		
+		g_bMotdDisabled[iClient] = false;
 	}
 }
+
+public void CreateMotdMenu()
+{
+	if (g_mMenuWarning != null) {
+		return;
+	}
+	
+	char szBuffer[128];
+	
+	g_mMenuWarning = new Menu(MenuHandler);
+	
+	Format(szBuffer, sizeof(szBuffer), "%t", "Menu_Title");
+	
+	g_mMenuWarning.SetTitle(szBuffer);
+	g_mMenuWarning.Pagination = MENU_NO_PAGINATION;
+	g_mMenuWarning.ExitBackButton = false;
+	g_mMenuWarning.ExitButton = false;
+	
+	Format(szBuffer, sizeof(szBuffer), "%t", "Menu_Phrase_0");
+	g_mMenuWarning.AddItem("", szBuffer, ITEMDRAW_DISABLED);
+	
+	Format(szBuffer, sizeof(szBuffer), "%t", "Menu_Phrase_1");
+	g_mMenuWarning.AddItem("", szBuffer, ITEMDRAW_DISABLED);
+	
+	Format(szBuffer, sizeof(szBuffer), "%t", "Menu_Phrase_2");
+	g_mMenuWarning.AddItem("", szBuffer, ITEMDRAW_DISABLED);
+	
+	Format(szBuffer, sizeof(szBuffer), "%t", "Menu_Phrase_Exit");
+	g_mMenuWarning.AddItem("0", szBuffer);
+}
+
+public int MenuHandler(Menu mMenu, MenuAction maAction, int iParam1, int iParam2){}
 
 public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 {
@@ -1191,6 +1248,7 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
 	
 	g_hFinishedTimer[iClient] = null;
+	g_iLastAdvertTime[iClient] = GetTime();
 	
 	return Plugin_Stop;
 }
@@ -1214,15 +1272,15 @@ stock bool IsValidClient(int iClient)
 
 stock bool IsClientImmune(int iClient)
 {
-	if (g_bImmunityEnabled) {
-		if (!IsClientAuthorized(iClient)) {
-			return true;
-		}
-		
-		return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
+	if (!IsClientConnected(iClient)) {
+		return true;
 	}
 	
-	return false;
+	if (!g_bImmunityEnabled) {
+		return false;
+	}
+	
+	return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
 }
 
 stock bool CheckGameSpecificConditions()
@@ -1238,7 +1296,13 @@ stock bool CheckGameSpecificConditions()
 
 stock bool AdShouldWait(int iClient)
 {
-	if (!IsClientAuthorized(iClient)) {
+	char szAuthId[64];
+	
+	if (!IsClientAuthorized(iClient) || !GetClientAuthId(iClient, AuthId_Steam2, szAuthId, 64, true)) {
+		return true;
+	}
+	
+	if (StrEqual(szAuthId, "STEAM_ID_PENDING", false)) {
 		return true;
 	}
 	

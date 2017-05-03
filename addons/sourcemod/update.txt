@@ -4,11 +4,13 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.3.1"
-			"Previous"	"1.3.0"
+			"Latest"	"1.3.3"
+			"Previous"	"1.3.2"
 		}
 		
-		"Notes"	"Rewrote Timer and advert logic to fix error Handle error and prevent useless handles being opened."
+		"Notes"	"Fixed invalid handle error spam."
+		"Notes"	"Improved check before serving ad to make sure client is properly authorized and immunity checks are accurate."
+		"Notes"	"Removed kicking to prevent issues with Valve, replaced it with a hint instead which can be controlled with sm_vpp_notifymotd."
 	}
 	
 	"Files"

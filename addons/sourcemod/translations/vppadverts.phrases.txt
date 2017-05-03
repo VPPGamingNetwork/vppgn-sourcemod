@@ -43,4 +43,39 @@
 		"en" "{1} Radio stations loaded."
 		"pl" "{1} stacji radiowych zostało załadowane."
 	}
+	
+	"Menu_Title"
+	{
+		"#format"	""
+		"en"		"Your HTML MOTD is disabled!"
+		"pl"		"Twój HTML MOTD jest wyłączony!"
+	}
+	
+	"Menu_Phrase_0"
+	{
+		"#format"	""
+		"en"		"Please enable them to help support this server."
+		"pl"		"Proszę, aby umożliwić im pomoc w obsłudze tego serwera."
+	}
+	
+	"Menu_Phrase_1"
+	{
+		"#format"	""
+		"en"		"- Type cl_disablehtmlmotd 0 into console."
+		"en"		"- Wpisz polecenie cl_disablehtmlmotd 0 do konsoli."
+	}
+
+	"Menu_Phrase_2"
+	{
+		"#format"	""
+		"en"		"After you have done this, the notification will stop appearing."
+		"pl"		"Po wykonaniu tej czynności powiadomienie przestanie się pojawiać."
+	}
+
+	"Menu_Phrase_Exit"
+	{
+		"#format"	""
+		"en"		"Exit"
+		"pl"		"Wyjście"
+	}
 } 
