@@ -127,6 +127,8 @@
 					- Added min and max values to cvars and decreased default advert interval from 15 to 5 mins.
 					- Increased advert play time to 60 seconds to improve completion rates.
 					- Removed redirect to about:blank after advert as its now broken due to a CSGO update (and was not too important anyway).
+			1.3.4 -
+					- Fixed missing advert play times to improve completion rates.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -146,7 +148,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.3"
+#define PL_VERSION "1.3.4"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -793,7 +795,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	
 	if (StrEqual(szTitle, "VPP Network Advertisement MOTD") || StrEqual(szUrl, g_szAdvertUrl, false)) {
 		if (g_hFinishedTimer[iClient] == null) {
-			g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+			g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 		}
 		
 		if (g_bAdvertPlaying[iClient]) {
@@ -819,7 +821,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			strcopy(g_szResumeUrl[iClient], 128, szUrl);
 			
 			if (g_hFinishedTimer[iClient] == null) {
-				g_hFinishedTimer[iClient] = CreateTimer(45.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+				g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 			}
 			
 			RequestFrame(PrintRadioMessage, GetClientUserId(iClient));

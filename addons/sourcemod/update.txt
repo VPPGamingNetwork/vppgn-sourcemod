@@ -4,16 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.3.3"
-			"Previous"	"1.3.2"
+			"Latest"	"1.3.4"
+			"Previous"	"1.3.3"
 		}
 		
-		"Notes"	"Fixed invalid handle error spam."
-		"Notes"	"Improved check before serving ad to make sure client is properly authorized and immunity checks are accurate."
-		"Notes"	"Added notify option to as an alternative to kicking player for having html motd disabled, sm_vpp_kickmotd 1 = Kick, 2 = Notify, 0 = Do nothing."
-		"Notes"	"Added min and max values to cvars and decreased default advert interval from 15 to 5 mins."
-		"Notes"	"Increased advert play time to 60 seconds to improve completion rates."
-		"Notes"	"Removed redirect to about:blank after advert as its now broken due to a CSGO update (and was not too important anyway)."
+		"Notes"	"Fixed missing advert play times to improve completion rates."
 	}
 	
 	"Files"
