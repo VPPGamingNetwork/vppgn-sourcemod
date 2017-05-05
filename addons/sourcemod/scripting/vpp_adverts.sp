@@ -131,6 +131,9 @@
 					- Fixed missing advert play times to improve completion rates.
 			1.3.5 -
 					- (IMPORTANT UPDATE) Fixed adverts not playing after first ad had started.
+			1.3.6 	- (IMPORTANT UPDATE 2) Fixed intial advert not playing on games other than CSGO. 
+					- This update is optional only if you run CSGO, if you run a game other than CSGO then its important!
+					
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -150,7 +153,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.5"
+#define PL_VERSION "1.3.6"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -408,7 +411,7 @@ public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
 	
 	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, true) < view_as<QueryCookie>(0)) {  }
 	
-	if(!IsClientConnected(iClient)) {
+	if (!IsClientConnected(iClient)) {
 		return false;
 	}
 	
@@ -739,7 +742,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (StrEqual(szUrl, "motd")) {
-		
 		if (g_bProtoBuf) {
 			if (g_iMotdOccurence[iClient] == 1) {
 				if (g_iJoinType == 2 || AdShouldWait(iClient) || g_bMotdDisabled[iClient]) {
@@ -1086,18 +1088,20 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	return Plugin_Stop;
 }
 
-stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null)
+stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null, bool bAdvert = true)
 {
-	g_bAdvertQued[iClient] = false;
-	
-	if (AdShouldWait(iClient) || HasClientFinishedAds(iClient) || IsClientImmune(iClient)) {
-		return false;
-	}
-	
-	while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, false) < view_as<QueryCookie>(0)) {  }
-	
-	if(!IsClientConnected(iClient)) {
-		return false;
+	if(bAdvert) {
+		g_bAdvertQued[iClient] = false;
+		
+		if (AdShouldWait(iClient) || HasClientFinishedAds(iClient) || IsClientImmune(iClient)) {
+			return false;
+		}
+		
+		while (QueryClientConVar(iClient, "cl_disablehtmlmotd", Query_MotdPlayAd, false) < view_as<QueryCookie>(0)) {  }
+		
+		if (!IsClientConnected(iClient)) {
+			return false;
+		}
 	}
 	
 	if (g_bMotdDisabled[iClient]) {
@@ -1178,7 +1182,9 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	
 	delete hKv;
 	
-	g_iLastAdvertTime[iClient] = GetTime();
+	if(bAdvert) {
+		g_iLastAdvertTime[iClient] = GetTime();
+	}
 	
 	return true;
 }
@@ -1196,14 +1202,14 @@ public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult
 	if (StringToInt(szCvarValue) > 0) {
 		g_bMotdDisabled[iClient] = true;
 		
-		if(g_iMotdAction == 1) {
+		if (g_iMotdAction == 1) {
 			KickClient(iClient, "%t", "Kick Message");
 		} else if (g_iMotdAction == 2) {
 			PrintHintText(iClient, "%t", "Menu_Title");
 			g_mMenuWarning.Display(iClient, 10);
 		}
 	} else {
-		if (!g_bFirstJoin[iClient] && bPlayAd) {
+		if (bPlayAd && (!g_bFirstJoin || !g_bProtoBuf)) {
 			CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
 		
@@ -1262,7 +1268,7 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	g_bAdvertPlaying[iClient] = false;
 	
 	if (g_bRadioResumation && !StrEqual(g_szResumeUrl[iClient], "about:blank", false) && !StrEqual(g_szResumeUrl[iClient], "", false)) {
-		ShowVGUIPanelEx(iClient, "Radio Resumation", g_szResumeUrl[iClient], MOTDPANEL_TYPE_URL, 0, false);
+		ShowVGUIPanelEx(iClient, "Radio Resumation", g_szResumeUrl[iClient], MOTDPANEL_TYPE_URL, 0, false, null, false);
 	}
 	
 	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
@@ -1325,7 +1331,7 @@ stock bool AdShouldWait(int iClient)
 		return true;
 	}
 	
-	if(g_hFinishedTimer[iClient] != null) {
+	if (g_hFinishedTimer[iClient] != null) {
 		return true;
 	}
 	
