@@ -129,6 +129,8 @@
 					- Removed redirect to about:blank after advert as its now broken due to a CSGO update (and was not too important anyway).
 			1.3.4 -
 					- Fixed missing advert play times to improve completion rates.
+			1.3.5 -
+					- (IMPORTANT UPDATE) Fixed adverts not playing after first ad had started.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -148,7 +150,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.4"
+#define PL_VERSION "1.3.5"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -400,7 +402,7 @@ public int Native_IsAdvertPlaying(Handle hPlugin, int iNumParams) {
 public int Native_PlayAdvert(Handle hPlugin, int iNumParams) {
 	int iClient = GetNativeCell(1);
 	
-	if (HasClientFinishedAds(iClient) || g_bAdvertQued[iClient] || g_hFinishedTimer[iClient] != null) {
+	if (HasClientFinishedAds(iClient) || g_bAdvertQued[iClient]) {
 		return false;
 	}
 	
@@ -755,6 +757,8 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 					}
 				}
 				
+				g_bFirstJoin[iClient] = false;
+				
 				return Plugin_Continue;
 			}
 		} else {
@@ -1010,7 +1014,7 @@ public Action Timer_IntervalAd(Handle hTimer, int iUserId)
 	
 	VPP_PlayAdvert(iClient);
 	
-	return Plugin_Stop;
+	return Plugin_Continue;
 	
 }
 
@@ -1174,6 +1178,8 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	
 	delete hKv;
 	
+	g_iLastAdvertTime[iClient] = GetTime();
+	
 	return true;
 }
 
@@ -1262,7 +1268,6 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
 	
 	g_hFinishedTimer[iClient] = null;
-	g_iLastAdvertTime[iClient] = GetTime();
 	
 	return Plugin_Stop;
 }
@@ -1317,6 +1322,10 @@ stock bool AdShouldWait(int iClient)
 	}
 	
 	if (StrEqual(szAuthId, "STEAM_ID_PENDING", false)) {
+		return true;
+	}
+	
+	if(g_hFinishedTimer[iClient] != null) {
 		return true;
 	}
 	
