@@ -133,6 +133,12 @@
 					- (IMPORTANT UPDATE) Fixed adverts not playing after first ad had started.
 			1.3.6 	- (IMPORTANT UPDATE 2) Fixed intial advert not playing on games other than CSGO. 
 					- This update is optional only if you run CSGO, if you run a game other than CSGO then its important!
+			1.3.7   - Fix the remaining issues where ads would refuse to play regardless of the game.
+					- Fixed the a few cvar min values (Thanks Rushy for reporting the issue.)
+					- Changed how adverts play on phases -- 
+						- If an advert was qued (Regardless of the trigger) it would either wait for the client to die or for a phase to start, It will now respect the value of sm_vpp_onphase.
+						- For example if you have sm_vpp_onphase 0, It will continue waiting until the client dies before the qued advert starts, if however you set this to 1, it will supersede 
+						sm_vpp_wait_until_dead and play regardless of if the client is alive or not. (Thanks to Rushy for bringing this to my attention.)
 					
 					
 *****************************************************************************************************
@@ -145,7 +151,7 @@
 #include <vpp_adverts>
 
 #undef REQUIRE_PLUGIN
-#include <updater>
+#tryinclude <updater>
 
 #define UPDATE_URL    "http://vppgamingnetwork.com/smplugin/update.txt"
 
@@ -153,7 +159,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.6"
+#define PL_VERSION "1.3.7"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -313,13 +319,13 @@ public void OnPluginStart()
 	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join?, 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarJoinGame.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "5", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.", _, true, 3.0);
+	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "5", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.", _, true, 0.0, true, 3.0);
 	g_hCvarAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.", _, true, 3.0);
+	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.", _, true, 0.0, true, 3.0);
 	g_hCvarSpecAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) 0 = Disabled.", _, true, 0.0, true, 1.0);
+	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) (This will supersede sm_vpp_wait_until_dead) 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarPhaseAds.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarDeathAds = AutoExecConfig_CreateConVar("sm_vpp_every_x_deaths", "0", "Play an advert every time somebody dies this many times, 0 = Disabled.", _, true, 0.0);
@@ -370,9 +376,12 @@ public void OnPluginStart()
 	AutoExecConfig_CleanFile(); AutoExecConfig_ExecuteFile();
 	LoadRadioStations();
 	
+	
+	#if defined _updater_included
 	if (LibraryExists("updater")) {
 		Updater_AddPlugin(UPDATE_URL);
 	}
+	#endif
 	
 	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
@@ -443,12 +452,14 @@ public Action OldCvarFound(int iArgs)
 	return Plugin_Handled;
 }
 
+#if defined _updater_included
 public void OnLibraryAdded(const char[] szName)
 {
 	if (StrEqual(szName, "updater")) {
 		Updater_AddPlugin(UPDATE_URL);
 	}
 }
+#endif
 
 public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] szNewValue)
 {
@@ -942,17 +953,17 @@ public void OnMapStart() {
 	g_bPhase = false;
 }
 
-public void Event_RoundStart(Event eEvent, char[] chEvent, bool bDontBroadcast) {
+public void Event_RoundStart(Event eEvent, char[] szEvent, bool bDontBroadcast) {
 	g_bPhase = false;
 }
 
-public void Phase_Hooks(Event eEvent, char[] chEvent, bool bDontBroadcast)
+public void Phase_Hooks(Event eEvent, char[] szEvent, bool bDontBroadcast)
 {
-	g_bPhase = true;
-	
 	if (!g_bPhaseAds) {
 		return;
 	}
+	
+	g_bPhase = true;
 	
 	bool bShouldAdBeSent = false;
 	
@@ -971,7 +982,7 @@ public void Phase_Hooks(Event eEvent, char[] chEvent, bool bDontBroadcast)
 	}
 }
 
-public Action Event_PlayerTeam(Event eEvent, char[] chEvent, bool bDontBroadcast)
+public Action Event_PlayerTeam(Event eEvent, char[] szEvent, bool bDontBroadcast)
 {
 	int iClient = GetClientOfUserId(eEvent.GetInt("userid"));
 	int iTeam = eEvent.GetInt("team");
@@ -1090,7 +1101,7 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 
 stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl, int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null, bool bAdvert = true)
 {
-	if(bAdvert) {
+	if (bAdvert) {
 		g_bAdvertQued[iClient] = false;
 		
 		if (AdShouldWait(iClient) || HasClientFinishedAds(iClient) || IsClientImmune(iClient)) {
@@ -1182,7 +1193,7 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, const char[] szUrl
 	
 	delete hKv;
 	
-	if(bAdvert) {
+	if (bAdvert) {
 		g_iLastAdvertTime[iClient] = GetTime();
 	}
 	
@@ -1209,7 +1220,7 @@ public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult
 			g_mMenuWarning.Display(iClient, 10);
 		}
 	} else {
-		if (bPlayAd && (!g_bFirstJoin || !g_bProtoBuf)) {
+		if (bPlayAd) {
 			CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
 		
