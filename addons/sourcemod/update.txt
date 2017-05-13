@@ -4,13 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.3.7"
-			"Previous"	"1.3.6"
+			"Latest"	"1.3.8"
+			"Previous"	"1.3.7"
 		}
 		
-		"Notes"	"Fix the remaining issues where ads would refuse to play regardless of the game."
-		"Notes"	"Fixed the a few cvar min values (Thanks Rushy for reporting the issue.)"
-		"Notes"	"Tweaks to adverts which play on game phases - Read top of plugin source for full information of changes."
+		"Notes"	"(IMPORTANT UPDATE 3) Fix advert interval cvar."
 	}
 	
 	"Files"

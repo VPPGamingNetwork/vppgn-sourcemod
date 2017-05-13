@@ -139,6 +139,7 @@
 						- If an advert was qued (Regardless of the trigger) it would either wait for the client to die or for a phase to start, It will now respect the value of sm_vpp_onphase.
 						- For example if you have sm_vpp_onphase 0, It will continue waiting until the client dies before the qued advert starts, if however you set this to 1, it will supersede 
 						sm_vpp_wait_until_dead and play regardless of if the client is alive or not. (Thanks to Rushy for bringing this to my attention.)
+			1.3.8	- (IMPORTANT UPDATE 3) Fix advert interval cvar.
 					
 					
 *****************************************************************************************************
@@ -159,7 +160,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.7"
+#define PL_VERSION "1.3.8"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -319,10 +320,10 @@ public void OnPluginStart()
 	g_hCvarJoinGame = AutoExecConfig_CreateConVar("sm_vpp_onjoin", "1", "Should advertisement be displayed to players on first team join?, 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarJoinGame.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "5", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.", _, true, 0.0, true, 3.0);
+	g_hCvarAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_ad_period", "5", "How often the periodic adverts should be played (In Minutes), 0 = Disabled.", _, true, 0.0);
 	g_hCvarAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.", _, true, 0.0, true, 3.0);
+	g_hCvarSpecAdvertPeriod = AutoExecConfig_CreateConVar("sm_vpp_spec_ad_period", "3", "How often should ads be played to spectators (In Minutes), 0 = Disabled.", _, true, 0.0);
 	g_hCvarSpecAdvertPeriod.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarPhaseAds = AutoExecConfig_CreateConVar("sm_vpp_onphase", "1", "Should advertisement be displayed on game phases? (HalfTime, OverTime, MapEnd, WinPanels etc) (This will supersede sm_vpp_wait_until_dead) 0 = Disabled.", _, true, 0.0, true, 1.0);
@@ -1028,7 +1029,6 @@ public Action Timer_IntervalAd(Handle hTimer, int iUserId)
 	VPP_PlayAdvert(iClient);
 	
 	return Plugin_Continue;
-	
 }
 
 public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
