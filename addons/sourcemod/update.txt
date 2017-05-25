@@ -4,11 +4,12 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.3.8"
-			"Previous"	"1.3.7"
+			"Latest"	"1.3.9"
+			"Previous"	"1.3.8"
 		}
 		
-		"Notes"	"(IMPORTANT UPDATE 3) Fix advert interval cvar."
+		"Notes"	"Force sv_disable_motd to 0 to allow ads to play correctly."
+		"Notes"	"Change updater url for easier future updates."
 	}
 	
 	"Files"

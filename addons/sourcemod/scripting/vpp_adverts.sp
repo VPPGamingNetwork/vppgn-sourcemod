@@ -140,6 +140,9 @@
 						- For example if you have sm_vpp_onphase 0, It will continue waiting until the client dies before the qued advert starts, if however you set this to 1, it will supersede 
 						sm_vpp_wait_until_dead and play regardless of if the client is alive or not. (Thanks to Rushy for bringing this to my attention.)
 			1.3.8	- (IMPORTANT UPDATE 3) Fix advert interval cvar.
+			1.3.9	- 
+					- Force sv_disable_motd to 0 to allow ads to play correctly.
+					- Change updater url for easier future updates.
 					
 					
 *****************************************************************************************************
@@ -154,13 +157,13 @@
 #undef REQUIRE_PLUGIN
 #tryinclude <updater>
 
-#define UPDATE_URL    "http://vppgamingnetwork.com/smplugin/update.txt"
+#define UPDATE_URL    "https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/update.txt"
 
 
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.8"
+#define PL_VERSION "1.3.9"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -198,6 +201,7 @@ ConVar g_hCvarMessages = null;
 ConVar g_hCvarJoinType = null;
 ConVar g_hCvarWaitUntilDead = null;
 ConVar g_hCvarDeathAds = null;
+ConVar g_hCvarDisableMotd = null;
 
 Handle g_hFinishedTimer[MAXPLAYERS + 1] = null;
 Handle g_hSpecTimer[MAXPLAYERS + 1] = null;
@@ -352,6 +356,12 @@ public void OnPluginStart()
 	
 	g_hCvarWaitUntilDead = AutoExecConfig_CreateConVar("sm_vpp_wait_until_dead", "0", "Wait until player is dead (Except first join) 0 = Disabled.", _, true, 0.0, true, 1.0);
 	g_hCvarWaitUntilDead.AddChangeHook(OnCvarChanged);
+	
+	g_hCvarDisableMotd = FindConVar("sv_disable_motd");
+	
+	if(g_hCvarDisableMotd != null) {
+		g_hCvarDisableMotd.AddChangeHook(OnCvarChanged);
+	}
 	
 	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
 	
@@ -515,6 +525,10 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_iDeathAdCount = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarMotdCheck) {
 		g_iMotdAction = StringToInt(szNewValue);
+	} else if(hConVar == g_hCvarDisableMotd) {
+		if(StringToInt(szNewValue) != 0) {
+			g_hCvarDisableMotd.IntValue = 0;
+		}
 	}
 }
 
@@ -550,6 +564,17 @@ public void UpdateConVars()
 	g_iAdvertTotal = g_hCvarAdvertTotal.IntValue;
 	
 	g_hAdvertUrl.GetString(g_szAdvertUrl, sizeof(g_szAdvertUrl));
+	
+	if(g_hCvarDisableMotd != null) {
+		g_hCvarDisableMotd.IntValue = 0;
+	} else {
+		g_hCvarDisableMotd = FindConVar("sv_disable_motd");
+		
+		if(g_hCvarDisableMotd != null) {
+			g_hCvarDisableMotd.AddChangeHook(OnCvarChanged);
+			g_hCvarDisableMotd.IntValue = 0;
+		}
+	}
 }
 
 public Action Command_Reload(int iClient, int iArgs)
