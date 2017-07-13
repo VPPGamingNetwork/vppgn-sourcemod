@@ -143,7 +143,12 @@
 			1.3.9	- 
 					- Force sv_disable_motd to 0 to allow ads to play correctly.
 					- Change updater url for easier future updates.
-					
+			1.4.0   - 
+					- Account for people using cl_disablehtmlmotd -1.
+					- Fix a potential bug which could cause radio resumation to continue after a player stopped listening to radio.
+					- Added sending of parameters for future backend improvements.
+					- Added built in updater which should be more reliable.
+					- Added custom log file (VPP_Adverts.log)
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -153,17 +158,14 @@
 #include <autoexecconfig>
 #include <multicolors>
 #include <vpp_adverts>
-
-#undef REQUIRE_PLUGIN
-#tryinclude <updater>
+#include <EasyHTTP_VPP>
 
 #define UPDATE_URL    "https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/update.txt"
-
 
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.3.9"
+#define PL_VERSION "1.4.0"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -241,6 +243,8 @@ char g_szJoinGames[][] =  {
 };
 
 char g_szResumeUrl[MAXPLAYERS + 1][256];
+char g_szServerIP[64];
+char g_szLogFile[PLATFORM_MAX_PATH];
 
 /****************************************************************************************************
 	BOOLS.
@@ -270,6 +274,7 @@ int g_iJoinType = 1;
 int g_iMotdOccurence[MAXPLAYERS + 1] = 0;
 int g_iDeathAdCount = 0;
 int g_iMotdAction = 0;
+int g_iPort = -1;
 
 /****************************************************************************************************
 	FLOATS.
@@ -279,6 +284,8 @@ float g_fSpecAdvertPeriod;
 
 public void OnPluginStart()
 {
+	CheckExtensions();
+	
 	UserMsg umVGUIMenu = GetUserMessageId("VGUIMenu");
 	
 	if (umVGUIMenu == INVALID_MESSAGE_ID) {
@@ -313,7 +320,7 @@ public void OnPluginStart()
 	}
 	
 	if (!g_bGameTested) {
-		LogMessage("This plugin has not been tested on this engine / (game: %s, engine: %d), things may not work correctly.", g_szGameName, g_eVersion);
+		LogToFile(g_szLogFile, "This plugin has not been tested on this engine / (game: %s, engine: %d), things may not work correctly.", g_szGameName, g_eVersion);
 	}
 	
 	AutoExecConfig_SetFile("plugin.vpp_adverts");
@@ -359,9 +366,11 @@ public void OnPluginStart()
 	
 	g_hCvarDisableMotd = FindConVar("sv_disable_motd");
 	
-	if(g_hCvarDisableMotd != null) {
+	if (g_hCvarDisableMotd != null) {
 		g_hCvarDisableMotd.AddChangeHook(OnCvarChanged);
 	}
+	
+	BuildPath(Path_SM, g_szLogFile, sizeof(g_szLogFile), "logs/VPP_Adverts.log");
 	
 	RegAdminCmd("sm_vppreload", Command_Reload, ADMFLAG_CONVARS, "Reloads radio stations");
 	
@@ -387,13 +396,6 @@ public void OnPluginStart()
 	AutoExecConfig_CleanFile(); AutoExecConfig_ExecuteFile();
 	LoadRadioStations();
 	
-	
-	#if defined _updater_included
-	if (LibraryExists("updater")) {
-		Updater_AddPlugin(UPDATE_URL);
-	}
-	#endif
-	
 	RegServerCmd("sm_vpp_immunity", OldCvarFound, "Outdated cvar, please update your config.");
 	RegServerCmd("sm_vpp_ad_grace", OldCvarFound, "Outdated cvar, please update your config.");
 	
@@ -413,6 +415,8 @@ public APLRes AskPluginLoad2(Handle hNyself, bool bLate, char[] chError, int iEr
 	CreateNative("VPP_IsAdvertPlaying", Native_IsAdvertPlaying);
 	
 	RegPluginLibrary("VPPAdverts");
+	EasyHTTP_MarkNatives();
+	
 	return APLRes_Success;
 }
 
@@ -463,14 +467,13 @@ public Action OldCvarFound(int iArgs)
 	return Plugin_Handled;
 }
 
-#if defined _updater_included
-public void OnLibraryAdded(const char[] szName)
-{
-	if (StrEqual(szName, "updater")) {
-		Updater_AddPlugin(UPDATE_URL);
-	}
+public void OnLibraryAdded(const char[] szName) {
+	CheckExtensions();
 }
-#endif
+
+public void OnLibraryRemoved(const char[] szName) {
+	CheckExtensions();
+}
 
 public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] szNewValue)
 {
@@ -525,15 +528,18 @@ public void OnCvarChanged(ConVar hConVar, const char[] szOldValue, const char[] 
 		g_iDeathAdCount = StringToInt(szNewValue);
 	} else if (hConVar == g_hCvarMotdCheck) {
 		g_iMotdAction = StringToInt(szNewValue);
-	} else if(hConVar == g_hCvarDisableMotd) {
-		if(StringToInt(szNewValue) != 0) {
+	} else if (hConVar == g_hCvarDisableMotd) {
+		if (StringToInt(szNewValue) != 0) {
 			g_hCvarDisableMotd.IntValue = 0;
 		}
 	}
 }
 
 public void OnConfigsExecuted() {
+	CheckExtensions();
+	CheckForUpdates();
 	UpdateConVars();
+	GetServerIP();
 }
 
 public void UpdateConVars()
@@ -565,12 +571,12 @@ public void UpdateConVars()
 	
 	g_hAdvertUrl.GetString(g_szAdvertUrl, sizeof(g_szAdvertUrl));
 	
-	if(g_hCvarDisableMotd != null) {
+	if (g_hCvarDisableMotd != null) {
 		g_hCvarDisableMotd.IntValue = 0;
 	} else {
 		g_hCvarDisableMotd = FindConVar("sv_disable_motd");
 		
-		if(g_hCvarDisableMotd != null) {
+		if (g_hCvarDisableMotd != null) {
 			g_hCvarDisableMotd.AddChangeHook(OnCvarChanged);
 			g_hCvarDisableMotd.IntValue = 0;
 		}
@@ -596,7 +602,7 @@ stock int LoadRadioStations()
 	
 	int iLoaded = g_alRadioStations.Length;
 	
-	LogMessage("%t", "Radios Loaded", iLoaded);
+	LogToFile(g_szLogFile, "%t", "Radios Loaded", iLoaded);
 	
 	return iLoaded;
 }
@@ -624,7 +630,7 @@ stock void LoadPresetRadioStations()
 		
 		TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
 		
-		if (RadioEntryExists(szBuffer)) {
+		if (g_alRadioStations.FindString(szBuffer) != -1) {
 			continue;
 		}
 		
@@ -652,7 +658,7 @@ stock void LoadThirdPartyRadioStations()
 				
 				TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
 				
-				if (RadioEntryExists(szBuffer)) {
+				if (g_alRadioStations.FindString(szBuffer) != -1) {
 					continue;
 				}
 				
@@ -678,7 +684,7 @@ stock void LoadThirdPartyRadioStations()
 				
 				TrimString(szBuffer); StripQuotes(szBuffer); ReplaceString(szBuffer, sizeof(szBuffer), ";", "");
 				
-				if (RadioEntryExists(szBuffer)) {
+				if (g_alRadioStations.FindString(szBuffer) != -1) {
 					continue;
 				}
 				
@@ -784,15 +790,19 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 				if (g_iJoinType == 2 || AdShouldWait(iClient) || g_bMotdDisabled[iClient]) {
 					VPP_PlayAdvert(iClient);
 				} else {
-					if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
-						VPP_PlayAdvert(iClient);
-					} else {
-						if (g_hFinishedTimer[iClient] == null) {
-							g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+					if (FormatAdvertUrl(iClient, g_szAdvertUrl, szUrl)) {
+						if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", szUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
+							VPP_PlayAdvert(iClient);
+						} else {
+							if (g_hFinishedTimer[iClient] == null) {
+								g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+							}
+							
+							RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
+							g_bAdvertPlaying[iClient] = true;
 						}
-						
-						RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
-						g_bAdvertPlaying[iClient] = true;
+					} else {
+						VPP_PlayAdvert(iClient);
 					}
 				}
 				
@@ -818,25 +828,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		return Plugin_Continue;
 	}
 	
-	bool bRadio = false;
-	
-	if (g_bRadioResumation) {
-		char szBuffer[256];
-		
-		int iRadioStations = g_alRadioStations.Length;
-		
-		for (int i = 0; i < iRadioStations; i++) {
-			g_alRadioStations.GetString(i, szBuffer, sizeof(szBuffer));
-			
-			if (StrContains(szUrl, szBuffer, false) != -1) {
-				strcopy(g_szResumeUrl[iClient], 128, szUrl);
-				bRadio = true;
-				break;
-			}
-		}
-	}
-	
-	if (StrEqual(szTitle, "VPP Network Advertisement MOTD") || StrEqual(szUrl, g_szAdvertUrl, false)) {
+	if (StrEqual(szTitle, "VPP Network Advertisement MOTD") || StrContains(szUrl, g_szAdvertUrl, false) != -1) {
 		if (g_hFinishedTimer[iClient] == null) {
 			g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 		}
@@ -858,26 +850,26 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		return Plugin_Continue;
 	}
 	
+	bool bRadio = IsRadio(szUrl);
+	
+	if (bRadio) {
+		strcopy(g_szResumeUrl[iClient], 128, szUrl);
+	}
+	
 	if (g_bAdvertPlaying[iClient]) {
-		if (bRadio || (!StrEqual(g_szResumeUrl[iClient], "", false) && !StrEqual(g_szResumeUrl[iClient], "about:blank", false)) && g_bRadioResumation) {
-			
-			strcopy(g_szResumeUrl[iClient], 128, szUrl);
-			
-			if (g_hFinishedTimer[iClient] == null) {
-				g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
-			}
-			
+		if (g_hFinishedTimer[iClient] == null) {
+			g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+		}
+		
+		if (bRadio || (!StrEqual(g_szResumeUrl[iClient], "", false) && !StrEqual(g_szResumeUrl[iClient], "about:blank", false) && g_bRadioResumation)) {
 			RequestFrame(PrintRadioMessage, GetClientUserId(iClient));
 		} else {
-			
-			if (g_bFirstJoin[iClient] || g_iMotdOccurence[iClient] == 1) {
-				strcopy(g_szResumeUrl[iClient], 128, szUrl);
-			} else {
-				RequestFrame(PrintMiscMessage, GetClientUserId(iClient));
-			}
+			RequestFrame(PrintMiscMessage, GetClientUserId(iClient));
 		}
 		
 		return Plugin_Handled;
+	} else if (!bRadio && !StrEqual(szTitle, "VPP Network Advertisement MOTD") && StrContains(szUrl, g_szAdvertUrl, false) == -1) {
+		strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 	}
 	
 	return Plugin_Continue;
@@ -1104,7 +1096,13 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 		return Plugin_Stop;
 	}
 	
-	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", g_szAdvertUrl, MOTDPANEL_TYPE_URL, _, true);
+	char szUrl[256];
+	
+	if (!FormatAdvertUrl(iClient, g_szAdvertUrl, szUrl)) {
+		return Plugin_Continue;
+	}
+	
+	ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", szUrl, MOTDPANEL_TYPE_URL, _, true);
 	
 	int iTeam = GetClientTeam(iClient);
 	
@@ -1235,21 +1233,22 @@ public void Query_MotdPlayAd(QueryCookie qCookie, int iClient, ConVarQueryResult
 		return;
 	}
 	
-	if (StringToInt(szCvarValue) > 0) {
-		g_bMotdDisabled[iClient] = true;
-		
-		if (g_iMotdAction == 1) {
-			KickClient(iClient, "%t", "Kick Message");
-		} else if (g_iMotdAction == 2) {
-			PrintHintText(iClient, "%t", "Menu_Title");
-			g_mMenuWarning.Display(iClient, 10);
-		}
-	} else {
+	if (StringToInt(szCvarValue) == 0) {
 		if (bPlayAd) {
 			CreateTimer(0.0, Timer_PlayAdvert, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
 		
 		g_bMotdDisabled[iClient] = false;
+		return;
+	}
+	
+	g_bMotdDisabled[iClient] = true;
+	
+	if (g_iMotdAction == 1) {
+		KickClient(iClient, "%t", "Kick Message");
+	} else if (g_iMotdAction == 2) {
+		PrintHintText(iClient, "%t", "Menu_Title");
+		g_mMenuWarning.Display(iClient, 10);
 	}
 }
 
@@ -1305,6 +1304,8 @@ public Action Timer_AdvertFinished(Handle hTimer, int iUserId)
 	
 	if (g_bRadioResumation && !StrEqual(g_szResumeUrl[iClient], "about:blank", false) && !StrEqual(g_szResumeUrl[iClient], "", false)) {
 		ShowVGUIPanelEx(iClient, "Radio Resumation", g_szResumeUrl[iClient], MOTDPANEL_TYPE_URL, 0, false, null, false);
+	} else if (!g_bRadioResumation) {
+		strcopy(g_szResumeUrl[iClient], 128, "about:blank");
 	}
 	
 	RequestFrame(Frame_AdvertFinishedForward, GetClientUserId(iClient));
@@ -1405,8 +1406,87 @@ stock bool HasClientFinishedAds(int iClient)
 	return false;
 }
 
-stock bool RadioEntryExists(const char[] szEntry)
+stock void GetServerIP()
 {
+	bool bGotIP = false;
+	
+	CheckExtensions();
+	
+	#if defined _SteamWorks_Included || defined _steamtools_included
+	
+	if (g_bSteamWorks || g_bSteamTools) {
+		int iSIP[4];
+		
+		if (g_bSteamWorks) {
+			SteamWorks_GetPublicIP(iSIP);
+		} else if (g_bSteamTools) {
+			Steam_GetPublicIP(iSIP);
+		}
+		
+		Format(g_szServerIP, sizeof(g_szServerIP), "%d.%d.%d.%d", iSIP[0], iSIP[1], iSIP[2], iSIP[3]);
+		
+		if (!IsLocal(IPToLong(g_szServerIP))) {
+			bGotIP = true;
+		} else {
+			strcopy(g_szServerIP, sizeof(g_szServerIP), "");
+			bGotIP = false;
+		}
+	}
+	#endif
+	
+	if (!bGotIP) {
+		ConVar hCvarIP = FindConVar("hostip");
+		
+		if (hCvarIP != null) {
+			int iServerIP = hCvarIP.IntValue; bGotIP = !IsLocal(iServerIP);
+			
+			if (bGotIP) {
+				Format(g_szServerIP, sizeof(g_szServerIP), "%d.%d.%d.%d", iServerIP >>> 24 & 255, iServerIP >>> 16 & 255, iServerIP >>> 8 & 255, iServerIP & 255);
+			}
+		}
+	}
+	
+	#if defined _easyhttp_included
+	if (!bGotIP) {
+		EasyHTTP("http://ipinfo.io/ip", GET, INVALID_HANDLE, IPReceived, _);
+	}
+	#endif
+	
+	ConVar hCvarPort = FindConVar("hostport");
+	
+	if (hCvarPort != null) {
+		g_iPort = hCvarPort.IntValue;
+	}
+}
+
+public int IPReceived(any aData, const char[] szBuffer, bool bSuccess)
+{
+	if (!bSuccess) {
+		return;
+	}
+	
+	if (IsLocal(IPToLong(szBuffer))) {
+		return;
+	}
+	
+	strcopy(g_szServerIP, sizeof(g_szServerIP), szBuffer);
+}
+
+stock bool FormatAdvertUrl(int iClient, char[] szInput, char[] szOutput) {
+	char szAuthId[64];
+	
+	if (!GetClientAuthId(iClient, AuthId_Steam2, szAuthId, 64)) {
+		strcopy(szAuthId, 64, "null");
+	}
+	
+	return Format(szOutput, 256, "%s?ip=%s&po=%d&st=%s&pv=%sgm=%s", szInput, g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName) > 0;
+}
+
+stock bool IsRadio(const char[] szUrl) {
+	if (!g_bRadioResumation) {
+		return false;
+	}
+	
 	int iRadioStations = g_alRadioStations.Length;
 	
 	if (iRadioStations <= 0) {
@@ -1418,11 +1498,109 @@ stock bool RadioEntryExists(const char[] szEntry)
 	for (int i = 0; i < iRadioStations; i++) {
 		g_alRadioStations.GetString(i, szBuffer, sizeof(szBuffer));
 		
-		
-		if (StrEqual(szEntry, szBuffer, false)) {
-			return true;
+		if (StrContains(szUrl, szBuffer, false) == -1) {
+			continue;
 		}
+		
+		return true;
 	}
 	
 	return false;
+}
+
+stock int IPToLong(const char[] szIP)
+{
+	char szPieces[4][4];
+	
+	if (ExplodeString(szIP, ".", szPieces, sizeof(szPieces), sizeof(szPieces[])) != 4) {
+		return 0;
+	}
+	
+	return (StringToInt(szPieces[0]) << 24 | StringToInt(szPieces[1]) << 16 | StringToInt(szPieces[2]) << 8 | StringToInt(szPieces[3]));
+}
+
+stock bool IsLocal(int iIP)
+{
+	if (167772160 <= iIP <= 184549375 || 2886729728 <= iIP <= 2887778303 || 3232235520 <= iIP <= 3232301055) {
+		return true;
+	}
+	
+	return false;
+}
+
+stock void CheckForUpdates() {
+	#if defined _easyhttp_included
+	EasyHTTP(UPDATE_URL, GET, INVALID_HANDLE, VersionRecived, _);
+	#endif
+}
+
+public int VersionRecived(any aData, const char[] szBuffer, bool bSuccess)
+{
+	if (!bSuccess) {
+		return;
+	}
+	
+	KeyValues kKV = CreateKeyValues("Updater");
+	
+	if (!kKV.ImportFromString(szBuffer, "VersionTracker")) {
+		delete kKV;
+		return;
+	}
+	
+	if (!kKV.JumpToKey("Information")) {
+		delete kKV;
+		return;
+	}
+	
+	if (!kKV.JumpToKey("Version")) {
+		delete kKV;
+		return;
+	}
+	
+	char szLatest[10]; kKV.GetString("Latest", szLatest, 10, "null"); delete kKV;
+	
+	if (StrEqual(szLatest, "null", false)) {
+		return;
+	}
+	
+	ReplaceString(szLatest, 10, ".", "", false);
+	char szCurrent[10]; Format(szCurrent, 10, "%s", PL_VERSION);
+	ReplaceString(szCurrent, 10, ".", "", false);
+	
+	int iLatest = StringToInt(szLatest);
+	int iCurrent = StringToInt(szCurrent);
+	
+	if (iLatest > iCurrent) {
+		char szPath[64]; GetPluginFilename(INVALID_HANDLE, szPath, 64);
+		
+		if (BuildPath(Path_SM, szPath, 64, "plugins/%s", szPath)) {
+			LogToFile(g_szLogFile, "An update (Latest Version %d, Current Version %d) was found, Updating %s", iLatest, szPath);
+			EasyHTTP("https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/plugins/vpp_adverts.smx", GET, INVALID_HANDLE, UpdateRecieved, _, szPath);
+		}
+	}
+}
+
+public int UpdateRecieved(any aData, const char[] szBuffer, bool bSuccess)
+{
+	if (!bSuccess) {
+		LogToFile(g_szLogFile, "Updated failed.");
+		return;
+	}
+	
+	LogToFile(g_szLogFile, "Updated sucessfully.");
+	
+	char szPath[64]; GetPluginFilename(INVALID_HANDLE, szPath, 64);
+	ServerCommand("sm plugins reload %s", szPath);
+}
+
+stock void CheckExtensions()
+{
+	EasyHTTPCheckExtensions();
+	
+	if (!g_bSteamWorks && !g_bCURL && !g_bSockets && !g_bSteamTools)
+		SetFailState("This plugin requires ATLEAST ONE of these extensions installed:\n\
+			SteamWorks - https://forums.alliedmods.net/showthread.php?t=229556\n\
+			SteamTools - http://forums.alliedmods.net/showthread.php?t=129763\n\
+			cURL - http://forums.alliedmods.net/showthread.php?t=152216\n\
+			Socket - http://forums.alliedmods.net/showthread.php?t=67640");
 } 
