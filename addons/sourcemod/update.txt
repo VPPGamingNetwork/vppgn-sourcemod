@@ -1,0 +1,35 @@
+"Updater"
+{
+	"Information"
+	{
+		"Version"
+		{
+			"Latest"	"1.4.1"
+			"Previous"	"1.4.0"
+		}
+		
+		"Notes"	"Fixed built in Updater."
+		"Notes"	"Fixed parameter formatting."
+	}
+	
+	"Files"
+	{
+		"Plugin"	"Path_SM/plugins/vpp_adverts.smx"
+		"Plugin"	"Path_SM/plugins/updater.smx"
+		"Plugin"	"Path_SM/translations/vppadverts.phrases.txt"
+		"Plugin"	"Path_SM/configs/vpp_adverts_radios.txt"
+		
+		"Source"	"Path_SM/scripting/vpp_adverts.sp"
+		"Source"	"Path_SM/scripting/include/autoexecconfig.inc"
+		"Source"	"Path_SM/scripting/include/cURL.inc"
+		"Source"	"Path_SM/scripting/include/cURL_header.inc"
+		"Source"	"Path_SM/scripting/include/EasyHTTP_VPP.inc"
+		"Source"	"Path_SM/scripting/include/multicolors.inc"
+		"Source"	"Path_SM/scripting/include/socket.inc"
+		"Source"	"Path_SM/scripting/include/steamtools.inc"
+		"Source"	"Path_SM/scripting/include/SteamWorks.inc"
+		"Source"	"Path_SM/scripting/include/vpp_adverts.inc"
+		"Source"	"Path_SM/scripting/include/multicolors/colors.inc"
+		"Source"	"Path_SM/scripting/include/multicolors/morecolors.inc"
+	}
+}

@@ -1,0 +1,14 @@
+"Updater"
+{
+	"Information"
+	{
+		"Version"
+		{
+			"Latest"	"1.4.1"
+			"Previous"	"1.4.0"
+		}
+		
+		"0"	"Fixed built in Updater."
+		"1"	"Fixed parameter formatting."
+	}
+}

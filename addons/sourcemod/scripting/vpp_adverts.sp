@@ -149,6 +149,10 @@
 					- Added sending of parameters for future backend improvements.
 					- Added built in updater which should be more reliable.
 					- Added custom log file (VPP_Adverts.log)
+			1.4.1   - 
+					- Fixed built in Updater.
+					- Fixed parameter formatting.
+			
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -160,12 +164,12 @@
 #include <vpp_adverts>
 #include <EasyHTTP_VPP>
 
-#define UPDATE_URL    "https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/update.txt"
+#define UPDATE_URL    "https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/updatev2.txt"
 
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.0"
+#define PL_VERSION "1.4.1"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -174,6 +178,7 @@
 *****************************************************************************************************/
 #pragma newdecls required;
 #pragma semicolon 1;
+#pragma dynamic 131072
 
 /****************************************************************************************************
 	PLUGIN INFO.
@@ -263,6 +268,7 @@ bool g_bMessages = false;
 bool g_bWaitUntilDead = false;
 bool g_bAdvertQued[MAXPLAYERS + 1] = false;
 bool g_bMotdDisabled[MAXPLAYERS + 1] = false;
+bool g_bUpdating = false;
 
 /****************************************************************************************************
 	INTS.
@@ -965,6 +971,7 @@ public void OnClientDisconnect(int iClient)
 
 public void OnMapEnd() {
 	g_bPhase = false;
+	g_bUpdating = false;
 }
 
 public void OnMapStart() {
@@ -1479,7 +1486,7 @@ stock bool FormatAdvertUrl(int iClient, char[] szInput, char[] szOutput) {
 		strcopy(szAuthId, 64, "null");
 	}
 	
-	return Format(szOutput, 256, "%s?ip=%s&po=%d&st=%s&pv=%sgm=%s", szInput, g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName) > 0;
+	return Format(szOutput, 256, "%s?ip=%s&po=%d&st=%s&pv=%s&gm=%s&ad=%d", szInput, g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName, g_bFirstJoin[iClient] ? 1 : 2) > 0;
 }
 
 stock bool IsRadio(const char[] szUrl) {
@@ -1529,67 +1536,99 @@ stock bool IsLocal(int iIP)
 }
 
 stock void CheckForUpdates() {
-	#if defined _easyhttp_included
-	EasyHTTP(UPDATE_URL, GET, INVALID_HANDLE, VersionRecived, _);
-	#endif
+	if (!g_bUpdating) {
+		g_bUpdating = EasyHTTP(UPDATE_URL, GET, INVALID_HANDLE, VersionRecieved, _);
+	}
 }
 
-public int VersionRecived(any aData, const char[] szBuffer, bool bSuccess)
+public int VersionRecieved(any aData, const char[] szBuffer, bool bSuccess)
 {
 	if (!bSuccess) {
+		g_bUpdating = false;
 		return;
 	}
 	
 	KeyValues kKV = CreateKeyValues("Updater");
 	
 	if (!kKV.ImportFromString(szBuffer, "VersionTracker")) {
+		g_bUpdating = false;
 		delete kKV;
 		return;
 	}
 	
 	if (!kKV.JumpToKey("Information")) {
+		g_bUpdating = false;
 		delete kKV;
 		return;
 	}
 	
 	if (!kKV.JumpToKey("Version")) {
+		g_bUpdating = false;
 		delete kKV;
 		return;
 	}
 	
-	char szLatest[10]; kKV.GetString("Latest", szLatest, 10, "null"); delete kKV;
+	char szLatest[10]; kKV.GetString("Latest", szLatest, 10, "null");
+	char szCurrent[10]; Format(szCurrent, 10, "%s", PL_VERSION);
 	
 	if (StrEqual(szLatest, "null", false)) {
+		g_bUpdating = false;
+		delete kKV;
 		return;
 	}
 	
-	ReplaceString(szLatest, 10, ".", "", false);
-	char szCurrent[10]; Format(szCurrent, 10, "%s", PL_VERSION);
-	ReplaceString(szCurrent, 10, ".", "", false);
-	
-	int iLatest = StringToInt(szLatest);
-	int iCurrent = StringToInt(szCurrent);
+	char szBuffer2[256];
+	strcopy(szBuffer2, 256, szLatest); ReplaceString(szBuffer2, 10, ".", "", false); int iLatest = StringToInt(szBuffer2);
+	strcopy(szBuffer2, 256, szCurrent); ReplaceString(szBuffer2, 10, ".", "", false); int iCurrent = StringToInt(szBuffer2);
 	
 	if (iLatest > iCurrent) {
 		char szPath[64]; GetPluginFilename(INVALID_HANDLE, szPath, 64);
 		
 		if (BuildPath(Path_SM, szPath, 64, "plugins/%s", szPath)) {
-			LogToFile(g_szLogFile, "An update (Latest Version %d, Current Version %d) was found, Updating %s", iLatest, szPath);
-			EasyHTTP("https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/plugins/vpp_adverts.smx", GET, INVALID_HANDLE, UpdateRecieved, _, szPath);
+			LogToFile(g_szLogFile, "Update available Current: %s - Latest: %s", szCurrent, szLatest, szPath);
+			kKV.GoBack(); int iPatch = 0;
+			DataPack dPack = CreateDataPack(); dPack.WriteString(szLatest); dPack.Reset();
+			
+			do {
+				Format(szBuffer2, 256, "%d", iPatch);
+				
+				kKV.GetString(szBuffer2, szBuffer2, 256, "null");
+				
+				if (StrEqual(szBuffer2, "null", false)) {
+					break;
+				}
+				
+				LogToFile(g_szLogFile, "[%d]  %s", iPatch++, szBuffer2);
+			} while (!StrEqual(szBuffer2, "null", false));
+			
+			if (!EasyHTTP("https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/plugins/vpp_adverts.smx", GET, INVALID_HANDLE, UpdateRecieved, dPack, szPath)) {
+				g_bUpdating = false;
+				LogToFile(g_szLogFile, "Error downloading update, Please update manually.");
+				delete dPack;
+				delete kKV;
+			}
 		}
+	} else {
+		g_bUpdating = false;
 	}
+	
+	delete kKV;
 }
 
-public int UpdateRecieved(any aData, const char[] szBuffer, bool bSuccess)
+public int UpdateRecieved(DataPack dPack, const char[] szBuffer, bool bSuccess)
 {
 	if (!bSuccess) {
-		LogToFile(g_szLogFile, "Updated failed.");
+		g_bUpdating = false;
+		LogToFile(g_szLogFile, "Error downloading update, Please update manually.");
 		return;
 	}
 	
-	LogToFile(g_szLogFile, "Updated sucessfully.");
-	
 	char szPath[64]; GetPluginFilename(INVALID_HANDLE, szPath, 64);
+	char szVersion[10]; dPack.Reset(); dPack.ReadString(szVersion, 10);
+	delete dPack;
+	
+	LogToFile(g_szLogFile, "Successfully updated and installed version %s.", szVersion);
+	g_bUpdating = false;
 	ServerCommand("sm plugins reload %s", szPath);
 }
 
