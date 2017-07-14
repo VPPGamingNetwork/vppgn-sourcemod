@@ -18,7 +18,6 @@
 	"Files"
 	{
 		"Plugin"	"Path_SM/plugins/vpp_adverts.smx"
-		"Plugin"	"Path_SM/plugins/updater.smx"
 		"Plugin"	"Path_SM/translations/vppadverts.phrases.txt"
 		"Plugin"	"Path_SM/configs/vpp_adverts_radios.txt"
 		
