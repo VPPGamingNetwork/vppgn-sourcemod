@@ -152,7 +152,9 @@
 			1.4.1   - 
 					- Fixed built in Updater.
 					- Fixed parameter formatting.
-			
+			1.4.2   - 
+					- Completion rate improvements.
+					- Fix regression in Day of defeat source.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -169,7 +171,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.1"
+#define PL_VERSION "1.4.2"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -415,7 +417,7 @@ public void OnPluginStart()
 	CreateMotdMenu();
 }
 
-public APLRes AskPluginLoad2(Handle hNyself, bool bLate, char[] chError, int iErrMax)
+public APLRes AskPluginLoad2(Handle hMySelf, bool bLate, char[] chError, int iErrMax)
 {
 	CreateNative("VPP_PlayAdvert", Native_PlayAdvert);
 	CreateNative("VPP_IsAdvertPlaying", Native_IsAdvertPlaying);
@@ -744,12 +746,22 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		BfReadString(hMsg, szKey, sizeof(szKey));
 	}
 	
+	if (g_iMotdOccurence[iClient] == 2 && StrEqual(g_szGameName, "csgo", false) && StrEqual(szKey, "team") && g_bAdvertPlaying[iClient]) {
+		g_bAdvertPlaying[iClient] = false;
+		g_iLastAdvertTime[iClient] = 0;
+		
+		if (g_hFinishedTimer[iClient] != null) {
+			delete g_hFinishedTimer[iClient];
+		}
+		
+		return Plugin_Continue;
+	}
+	
 	if (!StrEqual(szKey, "info")) {
 		return Plugin_Continue;
 	}
 	
-	char szTitle[256];
-	char szUrl[256];
+	char szTitle[256]; char szUrl[256];
 	
 	if (g_bProtoBuf) {
 		Handle hSubKey = null;
@@ -791,31 +803,46 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (StrEqual(szUrl, "motd")) {
+		if (g_bAdvertPlaying[iClient]) {
+			if (g_hFinishedTimer[iClient] == null) {
+				g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
+			}
+			
+			RequestFrame(PrintMiscMessage, GetClientUserId(iClient));
+			return Plugin_Handled;
+		}
+		
+		int iMotdCount = StrEqual(g_szGameName, "dod", false) ? 1 : 2;
+		
+		if (++g_iMotdOccurence[iClient] !=  iMotdCount) {
+			return Plugin_Continue;
+		}
+		
+		if (g_iJoinType == 2 || AdShouldWait(iClient) || g_bMotdDisabled[iClient]) {
+			VPP_PlayAdvert(iClient);
+			return Plugin_Continue;
+		}
+		
 		if (g_bProtoBuf) {
-			if (g_iMotdOccurence[iClient] == 1) {
-				if (g_iJoinType == 2 || AdShouldWait(iClient) || g_bMotdDisabled[iClient]) {
+			if (FormatAdvertUrl(iClient, g_szAdvertUrl, szUrl)) {
+				if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", szUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
 					VPP_PlayAdvert(iClient);
 				} else {
-					if (FormatAdvertUrl(iClient, g_szAdvertUrl, szUrl)) {
-						if (!ShowVGUIPanelEx(iClient, "VPP Network Advertisement MOTD", szUrl, MOTDPANEL_TYPE_URL, _, true, hMsg)) {
-							VPP_PlayAdvert(iClient);
-						} else {
-							if (g_hFinishedTimer[iClient] == null) {
-								g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
-							}
-							
-							RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
-							g_bAdvertPlaying[iClient] = true;
-						}
-					} else {
-						VPP_PlayAdvert(iClient);
+					if (g_hFinishedTimer[iClient] == null) {
+						g_hFinishedTimer[iClient] = CreateTimer(60.0, Timer_AdvertFinished, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
 					}
+					
+					RequestFrame(Frame_AdvertStartedForward, GetClientUserId(iClient));
+					g_bAdvertPlaying[iClient] = true;
 				}
-				
-				g_bFirstJoin[iClient] = false;
-				
-				return Plugin_Continue;
+			} else {
+				VPP_PlayAdvert(iClient);
 			}
+			
+			g_bFirstJoin[iClient] = false;
+			
+			return Plugin_Continue;
+			
 		} else {
 			switch (g_eVersion) {
 				case Engine_Left4Dead, Engine_Left4Dead2, 19: {
@@ -828,8 +855,6 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 				}
 			}
 		}
-		
-		g_iMotdOccurence[iClient]++;
 		
 		return Plugin_Continue;
 	}
@@ -1381,7 +1406,7 @@ stock bool AdShouldWait(int iClient)
 	
 	int iTeam = GetClientTeam(iClient);
 	
-	if (iTeam < 1 && (g_eVersion == Engine_DODS || (g_bFirstJoin[iClient] && g_iJoinType == 2))) {
+	if (iTeam < 1 && ((g_bFirstJoin[iClient] && g_iJoinType == 2))) {
 		return true;
 	}
 	
@@ -1479,7 +1504,12 @@ public int IPReceived(any aData, const char[] szBuffer, bool bSuccess)
 	strcopy(g_szServerIP, sizeof(g_szServerIP), szBuffer);
 }
 
-stock bool FormatAdvertUrl(int iClient, char[] szInput, char[] szOutput) {
+stock bool FormatAdvertUrl(int iClient, char[] szInput, char[] szOutput)
+{
+	if (StrEqual(g_szAdvertUrl, "", false)) {
+		return false;
+	}
+	
 	char szAuthId[64];
 	
 	if (!GetClientAuthId(iClient, AuthId_Steam2, szAuthId, 64)) {
@@ -1636,10 +1666,11 @@ stock void CheckExtensions()
 {
 	EasyHTTPCheckExtensions();
 	
-	if (!g_bSteamWorks && !g_bCURL && !g_bSockets && !g_bSteamTools)
+	if (!g_bSteamWorks && !g_bCURL && !g_bSockets && !g_bSteamTools) {
 		SetFailState("This plugin requires ATLEAST ONE of these extensions installed:\n\
 			SteamWorks - https://forums.alliedmods.net/showthread.php?t=229556\n\
 			SteamTools - http://forums.alliedmods.net/showthread.php?t=129763\n\
 			cURL - http://forums.alliedmods.net/showthread.php?t=152216\n\
 			Socket - http://forums.alliedmods.net/showthread.php?t=67640");
+	}
 } 

@@ -4,11 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.1"
-			"Previous"	"1.4.0"
+			"Latest"	"1.4.2"
+			"Previous"	"1.4.1"
 		}
 		
-		"0"	"Fixed built in Updater."
-		"1"	"Fixed parameter formatting."
+		"0"	"Completion rate improvements."
+		"1"	"Fix regression in Day of defeat source."
 	}
 }
