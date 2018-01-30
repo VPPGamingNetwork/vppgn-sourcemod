@@ -155,6 +155,8 @@
 			1.4.2   - 
 					- Completion rate improvements.
 					- Fix regression in Day of defeat source.
+			1.4.3
+					- Fix regression in No more room in hell, Nuclear Dawn (We were unable to test Brainbread 2 and Codename Cure, if somebody finds any issues with these game please let us know!)
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -166,12 +168,12 @@
 #include <vpp_adverts>
 #include <EasyHTTP_VPP>
 
-#define UPDATE_URL    "https://bitbucket.org/SM91337/vpp-adverts-sourcemod/raw/master/addons/sourcemod/updatev2.txt"
+#define UPDATE_URL    "https://raw.githubusercontent.com/VPPGamingNetwork/vppgn-sourcemod/master/addons/sourcemod/updatev2.txt"
 
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.2"
+#define PL_VERSION "1.4.3"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -283,6 +285,7 @@ int g_iMotdOccurence[MAXPLAYERS + 1] = 0;
 int g_iDeathAdCount = 0;
 int g_iMotdAction = 0;
 int g_iPort = -1;
+int g_iExpectedMotdOccurence = 2;
 
 /****************************************************************************************************
 	FLOATS.
@@ -415,6 +418,12 @@ public void OnPluginStart()
 	g_hOnAdvertFinished = CreateGlobalForward("VPP_OnAdvertFinished", ET_Ignore, Param_Cell, Param_String);
 	
 	CreateMotdMenu();
+	
+	if(StrEqual(g_szGameName, "dod", false) || StrEqual(g_szGameName, "nmrih", false) || StrEqual(g_szGameName, "nucleardawn", false)) {
+		g_iExpectedMotdOccurence = 1;
+	} else {
+		g_iExpectedMotdOccurence = 2;
+	}
 }
 
 public APLRes AskPluginLoad2(Handle hMySelf, bool bLate, char[] chError, int iErrMax)
@@ -812,9 +821,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			return Plugin_Handled;
 		}
 		
-		int iMotdCount = StrEqual(g_szGameName, "dod", false) ? 1 : 2;
-		
-		if (++g_iMotdOccurence[iClient] !=  iMotdCount) {
+		if (++g_iMotdOccurence[iClient] != g_iExpectedMotdOccurence) {
 			return Plugin_Continue;
 		}
 		

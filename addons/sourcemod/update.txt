@@ -4,12 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.2"
-			"Previous"	"1.4.1"
+			"Latest"	"1.4.3"
+			"Previous"	"1.4.2"
 		}
 		
-		"Notes"	"Completion rate improvements."
-		"Notes"	"Fix regression in Day of defeat source."
+		"Notes"	"Fix regression in No more room in hell, Nuclear Dawn (We were unable to test Brainbread 2 and Codename Cure, if somebody finds any issues with these game please let us know!)"
 	}
 	
 	"Files"
