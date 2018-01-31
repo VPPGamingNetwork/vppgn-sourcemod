@@ -157,6 +157,8 @@
 					- Fix regression in Day of defeat source.
 			1.4.3
 					- Fix regression in No more room in hell, Nuclear Dawn (We were unable to test Brainbread 2 and Codename Cure, if somebody finds any issues with these game please let us know!)
+			1.4.4
+					- Fix wait until death in No more room in hell.
 					
 *****************************************************************************************************
 *****************************************************************************************************
@@ -173,7 +175,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.3"
+#define PL_VERSION "1.4.4"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -419,7 +421,7 @@ public void OnPluginStart()
 	
 	CreateMotdMenu();
 	
-	if(StrEqual(g_szGameName, "dod", false) || StrEqual(g_szGameName, "nmrih", false) || StrEqual(g_szGameName, "nucleardawn", false)) {
+	if (StrEqual(g_szGameName, "dod", false) || StrEqual(g_szGameName, "nmrih", false) || StrEqual(g_szGameName, "nucleardawn", false)) {
 		g_iExpectedMotdOccurence = 1;
 	} else {
 		g_iExpectedMotdOccurence = 2;
@@ -1147,14 +1149,14 @@ public Action Timer_PlayAdvert(Handle hTimer, int iUserId)
 	
 	if (hTimer == g_hPeriodicTimer[iClient]) {
 		return Plugin_Continue;
-	} else if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0) {
+	} else if (iTeam == 1 && g_fSpecAdvertPeriod > 0.0 && !StrEqual(g_szGameName, "nmrih", false)) {
 		if (g_hSpecTimer[iClient] == null) {
 			g_hSpecTimer[iClient] = CreateTimer(g_fSpecAdvertPeriod * 60.0, Timer_PlayAdvert, iUserId, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 		}
 		
 		return Plugin_Continue;
 		
-	} else if (iTeam != 1 && g_hSpecTimer[iClient] != null && hTimer != g_hSpecTimer[iClient]) {
+	} else if ((iTeam != 1 || StrEqual(g_szGameName, "nmrih", false)) && g_hSpecTimer[iClient] != null && hTimer != g_hSpecTimer[iClient]) {
 		delete g_hSpecTimer[iClient];
 	}
 	
@@ -1417,7 +1419,7 @@ stock bool AdShouldWait(int iClient)
 		return true;
 	}
 	
-	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && iTeam > 1 && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
+	if (g_bWaitUntilDead && IsPlayerAlive(iClient) && (iTeam > 1 || StrEqual(g_szGameName, "nmrih", false)) && (!g_bPhase && !g_bFirstJoin[iClient] && !CheckGameSpecificConditions())) {
 		return true;
 	}
 	

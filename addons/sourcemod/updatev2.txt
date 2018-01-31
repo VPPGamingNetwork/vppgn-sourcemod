@@ -4,10 +4,10 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.3"
-			"Previous"	"1.4.2"
+			"Latest"	"1.4.4"
+			"Previous"	"1.4.3"
 		}
 		
-		"0"	"Fix regression in No more room in hell, Nuclear Dawn (We were unable to test Brainbread 2 and Codename Cure, if somebody finds any issues with these game please let us know!)"
+		"0"	"Fix wait until death in No more room in hell."
 	}
 }
