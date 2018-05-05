@@ -4,11 +4,24 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.4"
-			"Previous"	"1.4.3"
+			"Latest"	"1.4.5"
+			"Previous"	"1.4.4"
 		}
 		
-		"Notes"	"Fix wait until death in No more room in hell."
+		"Notes"	"Removed support for Codename: CURE as motd no longer functions in this game."
+		"Notes"	"Rewrote VGUI hook logic."
+		"Notes"	"Improved initial motd overriding in games which use bitbuffer messages."
+		"Notes"	"Increased default min advert period from 3 mins to 5 mins."
+		"Notes"	"Added cache buster which fixes motd caching issues, our solution is universal and cross game compatible, please remove any existing plugins which do such thing as they will cause severe conflicts, we have implemented such solution so you can continue to use VPP Adverts without losing this important fix."
+		"Notes"	"Added check for conflicting cache buster plugin."
+		"Notes"	"Added forward VPP_OnURL_Pre which gets called right before a url is sent to client (After cache busted)."
+		"Notes"	"Added safety features to prevent initial motd / team menu getting scuffed by other plugins which show VGUI panels."
+		"Notes"	"Added request count tracking."
+		"Notes"	"Removed sm_vpp_every_x_deaths as this did not make sense when an ad could not always be guaranteed every x deaths, please use the interval ConVar instead."
+		"Notes"	"Removed sm_vpp_onjoin_type as all issues with initial motd should now be resolved, if you want to motd ads on join please use sm_vpp_onjoin 0."
+		"Notes"	"Renamed radio reload command to sm_vpp_reloadradios."
+		"Notes"	"Changed immunity to default with admins that have root now, it is still changable with the override 'advertisement_immunity' though."
+		"Notes"	"General code cleanup and logic improvements."
 	}
 	
 	"Files"
