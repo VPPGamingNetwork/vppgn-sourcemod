@@ -190,7 +190,7 @@
 					- Added safety features to prevent initial motd / team menu getting scuffed by other plugins which show VGUI panels.
 					- Added request count tracking.
 					- Removed sm_vpp_every_x_deaths as this did not make sense when an ad could not always be guaranteed every x deaths, please use the interval ConVar instead.
-					- Removed sm_vpp_onjoin_type as all issues with initial motd should now be resolved, if you want to motd ads on join please use sm_vpp_onjoin 0.
+					- Removed sm_vpp_onjoin_type as all issues with initial motd should now be resolved, if you want to remove motd ads on join please use sm_vpp_onjoin 0.
 					- Renamed radio reload command to sm_vpp_reloadradios.
 					- Changed immunity to default with admins that have root now, it is still changable with the override 'advertisement_immunity' though.
 					- General code cleanup and logic improvements.
