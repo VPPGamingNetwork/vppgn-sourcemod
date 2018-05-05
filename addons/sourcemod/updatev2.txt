@@ -4,23 +4,10 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5"
-			"Previous"	"1.4.4"
+			"Latest"	"1.4.5.1"
+			"Previous"	"1.4.5"
 		}
 		
-		"0"	"Removed support for Codename: CURE as motd no longer functions in this game."
-		"1"	"Rewrote VGUI hook logic."
-		"2"	"Improved initial motd overriding in games which use bitbuffer messages."
-		"3"	"Increased default min advert period from 3 mins to 5 mins."
-		"4"	"Added cache buster which fixes motd caching issues, our solution is universal and cross game compatible, please remove any existing plugins which do such thing as they will cause severe conflicts, we have implemented such solution so you can continue to use VPP Adverts without losing this important fix."
-		"5"	"Added check for conflicting cache buster plugin."
-		"6"	"Added forward VPP_OnURL_Pre which gets called right before a url is sent to client (After cache busted)."
-		"7"	"Added safety features to prevent initial motd / team menu getting scuffed by other plugins which show VGUI panels."
-		"8"	"Added request count tracking."
-		"9" "Removed sm_vpp_every_x_deaths as this did not make sense when an ad could not always be guaranteed every x deaths, please use the interval ConVar instead."
-		"10" "Removed sm_vpp_onjoin_type as all issues with initial motd should now be resolved, if you want to remove motd ads on join please use sm_vpp_onjoin 0."
-		"11" "Renamed radio reload command to sm_vpp_reloadradios."
-		"12" "Changed immunity to default with admins that have root now, it is still changable with the override 'advertisement_immunity' though."
-		"13" "General code cleanup and logic improvements."
+		"0"	"Revert default immunity to reservation flag due to complaints."
 	}
 }

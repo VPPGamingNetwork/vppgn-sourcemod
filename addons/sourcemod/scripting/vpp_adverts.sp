@@ -194,6 +194,8 @@
 					- Renamed radio reload command to sm_vpp_reloadradios.
 					- Changed immunity to default with admins that have root now, it is still changable with the override 'advertisement_immunity' though.
 					- General code cleanup and logic improvements.
+			1.4.5.1 -
+					- Revert default immunity to reservation flag due to complaints.
 					
 *****************************************************************************************************
 	INCLUDES
@@ -426,7 +428,7 @@ public void OnPluginStart()
 	g_hCvarAdvertTotal = AutoExecConfig_CreateConVar("sm_vpp_ad_total", "0", "How many adverts should be played in total (excluding join adverts)? 0 = Unlimited, -1 = Disabled.", _, true, -1.0);
 	g_hCvarAdvertTotal.AddChangeHook(OnCvarChanged);
 	
-	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Root Flag)", _, true, 0.0, true, 1.0);
+	g_hCvarImmunityEnabled = AutoExecConfig_CreateConVar("sm_vpp_immunity_enabled", "0", "Prevent displaying ads to users with access to 'advertisement_immunity', 0 = Disabled. (Default: Reservartion flag)", _, true, 0.0, true, 1.0);
 	g_hCvarImmunityEnabled.AddChangeHook(OnCvarChanged);
 	
 	g_hCvarMotdCheck = AutoExecConfig_CreateConVar("sm_vpp_kickmotd", "0", "Action for player with html motd disabled, 0 = Disabled, 1 = Kick Player, 2 = Display notifications.", _, true, 0.0, true, 2.0);
@@ -1749,7 +1751,7 @@ stock bool IsClientImmune(int iClient)
 		return false;
 	}
 	
-	return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_ROOT);
+	return CheckCommandAccess(iClient, "advertisement_immunity", ADMFLAG_RESERVATION);
 }
 
 stock bool CheckGameSpecificConditions()
