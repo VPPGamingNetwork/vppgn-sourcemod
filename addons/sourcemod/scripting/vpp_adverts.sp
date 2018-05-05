@@ -211,7 +211,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5"
+#define PL_VERSION "1.4.5.1"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
