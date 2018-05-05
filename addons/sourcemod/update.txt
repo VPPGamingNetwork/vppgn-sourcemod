@@ -4,11 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.1"
-			"Previous"	"1.4.5"
+			"Latest"	"1.4.5.2"
+			"Previous"	"1.4.5.1"
 		}
 		
-		"Notes"	"Revert default immunity to reservation flag due to complaints."
+		"Notes"	"Fixed team join issues in TF2 for immune players."
 	}
 	
 	"Files"

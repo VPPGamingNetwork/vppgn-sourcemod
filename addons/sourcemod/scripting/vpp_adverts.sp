@@ -196,6 +196,8 @@
 					- General code cleanup and logic improvements.
 			1.4.5.1 -
 					- Revert default immunity to reservation flag due to complaints.
+			1.4.5.2 -
+					- Fixed team join issues in TF2 for immune players.
 					
 *****************************************************************************************************
 	INCLUDES
@@ -211,7 +213,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.1"
+#define PL_VERSION "1.4.5.2"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -802,7 +804,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			return Plugin_Handled;
 		}
 		
-		if (!g_bJoinAdverts || g_bMotdDisabled[iClient]) {
+		if (!g_bJoinAdverts || g_bMotdDisabled[iClient] || IsClientImmune(iClient)) {
 			g_bFirstMotd[iClient] = false;
 			g_bAdRequeue[iClient] = true;
 			return Plugin_Continue;
