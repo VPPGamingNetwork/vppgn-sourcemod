@@ -200,6 +200,8 @@
 					- Fixed team join issues in TF2 for immune players.
 			1.4.5.3 -
 					- Quick patch for TF2 big motd.
+			1.4.5.4 -
+					- Really fix TF2 issues for immune players this time (Thanks bottiger)
 					
 *****************************************************************************************************
 	INCLUDES
@@ -215,7 +217,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.3"
+#define PL_VERSION "1.4.5.4"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -795,6 +797,11 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (bMotd) {
+		if(IsClientImmune(iClient)) {
+			g_bFirstMotd[iClient] = false;
+			return Plugin_Continue;
+		}
+		
 		if (++g_iMotdOccurence[iClient] != g_iExpectedMotdOccurence) {
 			g_bAdvertCleared[iClient] = false;
 			
@@ -807,7 +814,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 			return Plugin_Handled;
 		}
 		
-		if (!g_bJoinAdverts || g_bMotdDisabled[iClient] || IsClientImmune(iClient)) {
+		if (!g_bJoinAdverts || g_bMotdDisabled[iClient]) {
 			g_bFirstMotd[iClient] = false;
 			g_bAdRequeue[iClient] = true;
 			return Plugin_Continue;

@@ -4,11 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.3"
-			"Previous"	"1.4.5.2"
+			"Latest"	"1.4.5.4"
+			"Previous"	"1.4.5.3"
 		}
 		
-		"Notes"	"Quick patch for TF2 big motd."
+		"Notes"	"Really fix TF2 issues for immune players this time (Thanks bottiger)"
 	}
 	
 	"Files"
