@@ -198,6 +198,8 @@
 					- Revert default immunity to reservation flag due to complaints.
 			1.4.5.2 -
 					- Fixed team join issues in TF2 for immune players.
+			1.4.5.3 -
+					- Quick patch for TF2 big motd.
 					
 *****************************************************************************************************
 	INCLUDES
@@ -213,7 +215,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.2"
+#define PL_VERSION "1.4.5.3"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -669,8 +671,8 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	char szUrl[256]; char szTitle[256]; char szKey[256];
-	bool bShow; bool bCacheBuster_Pre; int iWidth; int iHeight;
-	bool bGotURL = GetVGUIInfo(iClient, hMsg, szKey, szUrl, szTitle, iWidth, iHeight, bCacheBuster_Pre, bShow);
+	bool bShow; bool bCustomSvr; bool bCacheBuster_Pre; int iWidth; int iHeight;
+	bool bGotURL = GetVGUIInfo(iClient, hMsg, szKey, szUrl, szTitle, iWidth, iHeight, bCacheBuster_Pre, bShow, bCustomSvr);
 	bool bMotd; bool bVPP; bool bCacheBuster; bool bAboutBlank; bool bRadio; bool bMotdClear;
 	
 	if (StrEqual(szTitle, "Clear Motd", false)) {
@@ -764,6 +766,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		g_dCache[iClient].WriteCell(bShow);
 		g_dCache[iClient].WriteCell((bReliable ? USERMSG_RELIABLE : 0) | (bInit ? USERMSG_INITMSG : 0));
 		g_dCache[iClient].WriteCell(bVPP);
+		g_dCache[iClient].WriteCell(bCustomSvr);
 		
 		DataPack dPack = new DataPack();
 		dPack.WriteCell(iUserId);
@@ -1037,6 +1040,7 @@ public Action Timer_CacheBusted(Handle hTimer, int iUserId)
 	
 	int iFlags = g_dCache[iClient].ReadCell();
 	bool bAdvert = view_as<bool>(g_dCache[iClient].ReadCell());
+	bool bCustomSvr = view_as<bool>(g_dCache[iClient].ReadCell());
 	delete g_dCache[iClient];
 	
 	if (!bAdvert) {
@@ -1049,6 +1053,7 @@ public Action Timer_CacheBusted(Handle hTimer, int iUserId)
 		Call_PushCellRef(bShow);
 		Call_PushCellRef(iWidth);
 		Call_PushCellRef(iHeight);
+		Call_PushCellRef(bCustomSvr);
 		Call_Finish(aResult);
 		
 		if (aResult == Plugin_Stop || aResult == Plugin_Handled) {
@@ -1056,7 +1061,7 @@ public Action Timer_CacheBusted(Handle hTimer, int iUserId)
 		}
 	}
 	
-	ShowVGUIPanelEx(iClient, szTitle, szUrl, _, iFlags, bShow, _, bAdvert, iWidth, iHeight);
+	ShowVGUIPanelEx(iClient, szTitle, szUrl, _, iFlags, bShow, _, bAdvert, iWidth, iHeight, bCustomSvr);
 	return Plugin_Stop;
 }
 
@@ -1449,7 +1454,7 @@ public int Native_PlayAdvert(Handle hPlugin, int iNumParams)
 	return SendAdvert(iClient);
 }
 
-stock bool GetVGUIInfo(int iClient, Handle hMsg, char szKey[256], char szUrl[256], char szTitle[256], int & iWidth, int & iHeight, bool & bCacheBuster_Pre, bool & bShow)
+stock bool GetVGUIInfo(int iClient, Handle hMsg, char szKey[256], char szUrl[256], char szTitle[256], int & iWidth, int & iHeight, bool & bCacheBuster_Pre, bool & bShow, bool & bCustomSvr)
 {
 	if (g_bProtoBuf) {
 		PbReadString(hMsg, "name", szKey, sizeof(szKey));
@@ -1528,6 +1533,16 @@ stock bool GetVGUIInfo(int iClient, Handle hMsg, char szKey[256], char szUrl[256
 			}
 			
 			iHeight = StringToInt(szResult);
+		} else if (StrContains(szKey, "customsvr", false) != -1) {
+			char szResult[10];
+			
+			if (g_bProtoBuf) {
+				PbReadString(hSubKey, "str", szResult, sizeof(szResult));
+			} else {
+				BfReadString(hMsg, szResult, sizeof(szResult));
+			}
+			
+			bCustomSvr = view_as<bool>(StringToInt(szResult));
 		}
 	}
 	
@@ -1586,7 +1601,7 @@ stock void NullifyTimer(int iClient, Handle hTimer, bool bDelete)
 	}
 }
 
-stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, char szUrl[256], int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null, bool bAdvert = true, int iWidth = 0, int iHeight = 0)
+stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, char szUrl[256], int iType = MOTDPANEL_TYPE_URL, int iFlags = 0, bool bShow = true, Handle hMsg = null, bool bAdvert = true, int iWidth = 0, int iHeight = 0, bool bCustomSvr = false)
 {
 	if (g_bMotdDisabled[iClient]) {
 		return false;
@@ -1660,6 +1675,7 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, char szUrl[256], i
 	
 	hKv.SetNum("x-vgui-width", iWidth);
 	hKv.SetNum("x-vgui-height", iHeight);
+	hKv.SetNum("customsvr", bCustomSvr);
 	
 	hKv.GotoFirstSubKey(false);
 	iFlags &= ~USERMSG_BLOCKHOOKS;

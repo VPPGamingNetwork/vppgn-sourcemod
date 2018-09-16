@@ -4,10 +4,10 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.2"
-			"Previous"	"1.4.5.1"
+			"Latest"	"1.4.5.3"
+			"Previous"	"1.4.5.2"
 		}
 		
-		"0"	"Fixed team join issues in TF2 for immune players."
+		"0"	"Quick patch for TF2 big motd."
 	}
 }
