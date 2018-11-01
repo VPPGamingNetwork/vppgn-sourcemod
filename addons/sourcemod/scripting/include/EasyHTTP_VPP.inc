@@ -358,7 +358,7 @@ public EasyHTTP_CurlComplete(Handle:hndl, CURLcode:code, any:data)
 		curl_get_error_buffer(hndl, err, sizeof(err));
 		LogError("CURL error received: %d (%s)", code, err);
 		CloseHandle(hndl);
-		if(m_fnCallback != INVALID_FUNCTION)
+		if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 		{
 			Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 			Call_PushCell(m_aData);
@@ -370,7 +370,7 @@ public EasyHTTP_CurlComplete(Handle:hndl, CURLcode:code, any:data)
 	}
 	CloseHandle(hndl);
 
-	if(m_fnCallback != INVALID_FUNCTION)
+	if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 	{
 		Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 		Call_PushCell(m_aData);
@@ -414,7 +414,7 @@ public EasyHTTP_SteamWorksComplete(Handle:request, bool:failure, bool:successful
 		CloseHandle(request);
 		LogError("Request failed. HTTP status: %d", code);
 
-		if(m_fnCallback != INVALID_FUNCTION)
+		if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 		{
 			Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 			Call_PushCell(m_aData);
@@ -442,7 +442,7 @@ public EasyHTTP_SteamWorksComplete(Handle:request, bool:failure, bool:successful
 	else
 		SteamWorks_WriteHTTPResponseBodyToFile(request, m_szPath);
 
-	if(m_fnCallback != INVALID_FUNCTION)
+	if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 	{
 		Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 		Call_PushCell(m_aData);
@@ -466,7 +466,7 @@ public EasyHTTP_SteamToolsComplete(HTTPRequestHandle:request, bool:successful, H
 		Steam_ReleaseHTTPRequest(request);
 		LogError("Request failed. HTTP status: %d", code);
 
-		if(m_fnCallback != INVALID_FUNCTION)
+		if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 		{
 			Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 			Call_PushCell(m_aData);
@@ -492,7 +492,7 @@ public EasyHTTP_SteamToolsComplete(HTTPRequestHandle:request, bool:successful, H
 	else
 		Steam_WriteHTTPResponseBody(request, m_szPath);
 
-	if(m_fnCallback != INVALID_FUNCTION)
+	if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 	{
 		Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 		Call_PushCell(m_aData);
@@ -608,7 +608,7 @@ public EasyHTTP_SocketDisconnected(Handle:socket, any:data)
 	new Handle:m_hData = Handle:ReadPackCell(Handle:data);
 	CloseHandle(data);
 
-	if(m_fnCallback != INVALID_FUNCTION)
+	if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 	{
 		Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 		Call_PushCell(m_aData);
@@ -657,7 +657,7 @@ public EasyHTTP_SocketError(Handle:socket, const errorType, const errorNum, any:
 
 	LogError("Request failed. Error type: %d Num: %d", errorType, errorNum);
 
-	if(m_fnCallback != INVALID_FUNCTION)
+	if(m_fnCallback != view_as<Function>(INVALID_FUNCTION))
 	{
 		Call_StartFunction(INVALID_HANDLE, m_fnCallback);
 		Call_PushCell(m_aData);

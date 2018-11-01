@@ -202,6 +202,9 @@
 					- Quick patch for TF2 big motd.
 			1.4.5.4 -
 					- Really fix TF2 issues for immune players this time (Thanks bottiger)
+			1.4.5.5 -
+					- Temporarily removed tracking for backend test reasons.
+					- Temporary fix for EasyHTTP include not compiling, we are going to be replacing this later anyway.
 					
 *****************************************************************************************************
 	INCLUDES
@@ -217,7 +220,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.4"
+#define PL_VERSION "1.4.5.5"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -1899,13 +1902,7 @@ stock bool FormatAdvertUrl(int iClient, char[] szInput, char[] szOutput)
 	
 	TrimString(g_szVPPUrl); StripQuotes(g_szVPPUrl);
 	
-	char szAuthId[64];
-	
-	if (!GetClientAuthId(iClient, AuthId_Steam2, szAuthId, sizeof(szAuthId))) {
-		strcopy(szAuthId, sizeof(szAuthId), "null");
-	}
-	
-	return Format(szOutput, 256, "%s?ip=%s&po=%d&st=%s&pv=%s&gm=%s&ad=%d&count=%d", szInput, g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName, g_bFirstMotd[iClient] && g_bJoinAdverts ? 1 : 2, g_iAdvertRequests[iClient]) > 0;
+	return strcopy(szOutput, 256, szInput) > 0;
 }
 
 stock bool IsRadio(const char[] szUrl)

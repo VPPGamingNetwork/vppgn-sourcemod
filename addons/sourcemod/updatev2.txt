@@ -4,10 +4,11 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.4"
-			"Previous"	"1.4.5.3"
+			"Latest"	"1.4.5.5"
+			"Previous"	"1.4.5.4"
 		}
 		
-		"0"	"Really fix TF2 issues for immune players this time (Thanks bottiger)"
+		"0"	"Temporarily removed tracking for backend test reasons."
+		"1"	"Temporary fix for EasyHTTP include not compiling, we are going to be replacing this later anyway."
 	}
 }
