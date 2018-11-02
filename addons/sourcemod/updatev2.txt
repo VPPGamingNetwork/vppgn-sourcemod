@@ -4,11 +4,10 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.5"
-			"Previous"	"1.4.5.4"
+			"Latest"	"1.4.5.6"
+			"Previous"	"1.4.5.5"
 		}
 		
-		"0"	"Temporarily removed tracking for backend test reasons."
-		"1"	"Temporary fix for EasyHTTP include not compiling, we are going to be replacing this later anyway."
+		"0"	"Fixed missing CellRef in forward. (Thanks zo6zo6)"
 	}
 }

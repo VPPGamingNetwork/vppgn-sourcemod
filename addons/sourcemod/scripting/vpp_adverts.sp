@@ -205,6 +205,8 @@
 			1.4.5.5 -
 					- Temporarily removed tracking for backend test reasons.
 					- Temporary fix for EasyHTTP include not compiling, we are going to be replacing this later anyway.
+			1.4.5.6 -
+					- Fixed missing CellRef in forward. (Thanks zo6zo6)
 					
 *****************************************************************************************************
 	INCLUDES
@@ -220,7 +222,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.5"
+#define PL_VERSION "1.4.5.6"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -484,7 +486,7 @@ public void OnPluginStart()
 	
 	g_hOnAdvertStarted = CreateGlobalForward("VPP_OnAdvertStarted", ET_Ignore, Param_Cell, Param_String);
 	g_hOnAdvertFinished = CreateGlobalForward("VPP_OnAdvertFinished", ET_Ignore, Param_Cell, Param_String);
-	g_hOnUrlPre = CreateGlobalForward("VPP_OnURL_Pre", ET_Ignore, Param_Cell, Param_String, Param_String, Param_CellByRef, Param_CellByRef, Param_CellByRef);
+	g_hOnUrlPre = CreateGlobalForward("VPP_OnURL_Pre", ET_Ignore, Param_Cell, Param_String, Param_String, Param_CellByRef, Param_CellByRef, Param_CellByRef, Param_CellByRef);
 	
 	CreateMotdMenu();
 	
@@ -510,7 +512,8 @@ public void OnAllPluginsLoaded() {
 	CheckForConflictingPlugins();
 }
 
-public void OnLibraryAdded(const char[] szName) {
+public void OnLibraryAdded(const char[] szName) 
+{
 	CheckExtensions();
 	CheckForConflictingPlugins();
 }
@@ -800,7 +803,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 	}
 	
 	if (bMotd) {
-		if(IsClientImmune(iClient)) {
+		if (IsClientImmune(iClient)) {
 			g_bFirstMotd[iClient] = false;
 			return Plugin_Continue;
 		}
