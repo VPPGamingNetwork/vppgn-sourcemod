@@ -4,10 +4,10 @@
 	{
 		"Version"
 		{
-			"Latest"	"1.4.5.6"
-			"Previous"	"1.4.5.5"
+			"Latest"	"1.4.5.7"
+			"Previous"	"1.4.5.6"
 		}
 		
-		"0"	"Fixed missing CellRef in forward. (Thanks zo6zo6)"
+		"0"	"Resolved issues with sm_vpp_onphase Cvar in TF2. Fixed issue with VGUIs not showing up during Steam API downtime"
 	}
 }

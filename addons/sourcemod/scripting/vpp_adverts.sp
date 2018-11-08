@@ -207,6 +207,9 @@
 					- Temporary fix for EasyHTTP include not compiling, we are going to be replacing this later anyway.
 			1.4.5.6 -
 					- Fixed missing CellRef in forward. (Thanks zo6zo6)
+			1.4.5.7 -
+					- Resolved issues with sm_vpp_onphase Cvar in TF2
+					- Fixed issue with VGUIs not showing up during Steam API downtime
 					
 *****************************************************************************************************
 	INCLUDES
@@ -222,7 +225,7 @@
 /****************************************************************************************************
 	DEFINES
 *****************************************************************************************************/
-#define PL_VERSION "1.4.5.6"
+#define PL_VERSION "1.4.5.7"
 #define LoopValidClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++) if(IsValidClient(%1))
 #define PREFIX "[{lightgreen}Advert{default}] "
 
@@ -469,6 +472,7 @@ public void OnPluginStart()
 	HookEventEx("dod_game_over", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("dod_win_panel", Phase_Hooks, EventHookMode_Pre);
 	HookEventEx("round_start", Event_RoundStart, EventHookMode_Post);
+	HookEventEx("teamplay_round_start", Event_RoundStart, EventHookMode_Post);
 	HookEventEx("player_team", Event_PlayerTeam, EventHookMode_Post);
 	HookEventEx("player_class", Event_Requeue, EventHookMode_Post);
 	HookEventEx("player_spawn", Event_Requeue, EventHookMode_Post);
@@ -674,10 +678,23 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 {
 	int iClient = iPlayers[0];
 	
+	if (g_bSteamWorks)
+	{
+		if (!SteamWorks_IsConnected()) {
+			return Plugin_Continue;
+		}
+	}
+	else if (g_bSteamTools)
+	{
+		if (!Steam_IsConnected()) {
+			return Plugin_Continue;
+		}
+	}
+
 	if (!IsValidClient(iClient)) {
 		return Plugin_Continue;
 	}
-	
+
 	char szUrl[256]; char szTitle[256]; char szKey[256];
 	bool bShow; bool bCustomSvr; bool bCacheBuster_Pre; int iWidth; int iHeight;
 	bool bGotURL = GetVGUIInfo(iClient, hMsg, szKey, szUrl, szTitle, iWidth, iHeight, bCacheBuster_Pre, bShow, bCustomSvr);
