@@ -706,7 +706,7 @@ public Action OnVGUIMenu(UserMsg umId, Handle hMsg, const int[] iPlayers, int iP
 		bMotd = true;
 	} else if (StrContains(szUrl, g_szVPPUrl, false) != -1) {
 		bVPP = true;
-	} else if (StrContains(szUrl, "http://vppgaming.network/cachebuster/", false) != -1) {
+	} else if (StrContains(szUrl, "https://www.google.com/", false) != -1) {
 		bCacheBuster = true;
 	} else if (StrEqual(szUrl, "about:blank", false)) {
 		bAboutBlank = true;
