@@ -913,7 +913,7 @@ public Action Timer_SendCacheBuster(Handle hTimer, int iUserId)
 		strcopy(szAuthId, sizeof(szAuthId), "null");
 	}
 	
-	char szUrl[256]; Format(szUrl, sizeof(szUrl), "https://www.google.com/?ip=%s&po=%d&st=%s&pv=%s&gm=%s", g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName);
+	char szUrl[256]; Format(szUrl, sizeof(szUrl), "https://www.google.com/", g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName);
 	ShowVGUIPanelEx(iClient, "Cache Buster", szUrl, _, _, false, _, false);
 	
 	return Plugin_Stop;
