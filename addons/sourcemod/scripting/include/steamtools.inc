@@ -267,10 +267,10 @@ enum HTTPStatusCode
 	HTTPStatusCode_HTTPVersionNotSupported =		505,
 };
 
-funcenum HTTPRequestComplete
+typeset  HTTPRequestComplete
 {
-	public(HTTPRequestHandle:HTTPRequest, bool:requestSuccessful, HTTPStatusCode:statusCode),
-	public(HTTPRequestHandle:HTTPRequest, bool:requestSuccessful, HTTPStatusCode:statusCode, any:contextData),
+	function Action(HTTPRequestHandle HTTPRequest, bool requestSuccessful, HTTPStatusCode statusCode);
+	function Action(HTTPRequestHandle HTTPRequest, bool requestSuccessful, HTTPStatusCode statusCode, any contextData);
 };
 
 native HTTPRequestHandle:Steam_CreateHTTPRequest(HTTPMethod:HTTPRequestMethod, const String:absoluteURL[]);

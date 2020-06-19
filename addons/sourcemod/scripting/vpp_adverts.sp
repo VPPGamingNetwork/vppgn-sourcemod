@@ -1600,7 +1600,7 @@ stock void ClearTimers(int iClient, Handle hCurrentTimer, bool bDelete = true, b
 
 stock void NullifyTimer(int iClient, Handle hTimer, bool bDelete)
 {
-	if (bDelete && !IsValidHandle(hTimer)) {
+	if (bDelete && hTimer != INVALID_HANDLE) {
 		bDelete = false;
 	}
 	

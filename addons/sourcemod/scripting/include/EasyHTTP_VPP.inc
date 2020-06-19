@@ -453,7 +453,7 @@ public EasyHTTP_SteamWorksComplete(Handle:request, bool:failure, bool:successful
 	CloseHandle(request);
 }
 
-public EasyHTTP_SteamToolsComplete(HTTPRequestHandle:request, bool:successful, HTTPStatusCode:code, any:data)
+public Action EasyHTTP_SteamToolsComplete(HTTPRequestHandle:request, bool:successful, HTTPStatusCode:code, any:data)
 {
 	new Function:m_fnCallback = ReadPackFunction(Handle:data);
 	new any:m_aData = ReadPackCell(Handle:data);
