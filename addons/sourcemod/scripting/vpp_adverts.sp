@@ -913,7 +913,7 @@ public Action Timer_SendCacheBuster(Handle hTimer, int iUserId)
 		strcopy(szAuthId, sizeof(szAuthId), "null");
 	}
 	
-	char szUrl[256]; Format(szUrl, sizeof(szUrl), "http://vppgaming.network/cachebuster/?ip=%s&po=%d&st=%s&pv=%s&gm=%s", g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName);
+	char szUrl[256]; Format(szUrl, sizeof(szUrl), "https://www.google.com/?ip=%s&po=%d&st=%s&pv=%s&gm=%s", g_szServerIP, g_iPort, szAuthId, PL_VERSION, g_szGameName);
 	ShowVGUIPanelEx(iClient, "Cache Buster", szUrl, _, _, false, _, false);
 	
 	return Plugin_Stop;
@@ -1647,7 +1647,7 @@ stock bool ShowVGUIPanelEx(int iClient, const char[] szTitle, char szUrl[256], i
 		bMotd = true;
 	} else if (StrContains(szUrl, g_szVPPUrl, false) != -1) {
 		bAdvert = true;
-	} else if (StrContains(szUrl, "http://vppgaming.network/cachebuster/", false) != -1) {
+	} else if (StrContains(szUrl, "https://www.google.com/", false) != -1) {
 		bCacheBuster = true;
 	} else if (StrEqual(szUrl, "about:blank", false)) {
 		bAboutBlank = true;
